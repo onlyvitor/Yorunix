@@ -19,9 +19,13 @@ yorunix/
 │   └── boot.asm           # x86 bootloader and entry point (Multiboot compatible)
 ├── core/
 │   └── kernel.c           # Microkernel core implementation
+|-- divers/
+|   |---vga.c
 ├── include/               # Header files
+|   |---vga.h
 ├── Makefile              # Build configuration
 └── link.ld               # Linker script
+
 ```
 
 ## Requirements
