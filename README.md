@@ -113,7 +113,7 @@ This separation allows the kernel to remain small (&lt;100 KB) while delegating 
 
 - [x] Bootloader setup (Multiboot)
 - [x] Build system (Makefile)
-- [ ] GDT (Global Descriptor Table) setup
+- [x] GDT (Global Descriptor Table) setup
 - [ ] IDT (Interrupt Descriptor Table) setup
 - [ ] Basic process management
 - [ ] Memory management (paging)
