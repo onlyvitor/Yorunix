@@ -9,8 +9,17 @@ ARCH := i386
 ENTRY_POINT = boot/entry.asm
 ENTRY_OBJ = $(BUILD_DIR)/entry.o
 
-GDT_SRC = arch/x86/gdt.asm
-GDT_OBJ = $(BUILD_DIR)/gdt.o
+GDT_ASM_SRC = arch/x86/gdt.asm
+GDT_ASM_OBJ = $(BUILD_DIR)/gdt_asm.o
+
+GDT_C_SRC = arch/x86/gdt.c
+GDT_C_OBJ = $(BUILD_DIR)/gdt.o
+
+IDT_ASM_SRC = arch/x86/idt.asm
+IDT_ASM_OBJ = $(BUILD_DIR)/idt_asm.o
+
+IDT_C_SRC = arch/x86/idt.c
+IDT_C_OBJ = $(BUILD_DIR)/idt.o
 
 # Drivers sources/objects
 DRV_SRC = $(wildcard drivers/*.c)
@@ -44,14 +53,23 @@ endif
 
 all: $(BUILD_DIR)/kernel.bin
 
-$(BUILD_DIR)/kernel.bin: $(ENTRY_OBJ) $(GDT_OBJ) $(KERNEL_OBJ) $(DRV_OBJ)
+$(BUILD_DIR)/kernel.bin: $(ENTRY_OBJ) $(GDT_ASM_OBJ) $(GDT_C_OBJ) $(IDT_ASM_OBJ) $(IDT_C_OBJ) $(KERNEL_OBJ) $(DRV_OBJ)
 	$(LD) $(LINKER_FLAGS) -T $(LINKER_SCRIPT) -o $@ $^
 
 $(ENTRY_OBJ): $(ENTRY_POINT)
 	$(AS) $(ASFLAGS) -o $@ $<
 
-$(GDT_OBJ): $(GDT_SRC)
+$(GDT_ASM_OBJ): $(GDT_ASM_SRC)
 	$(AS) $(ASFLAGS) -o $@ $<
+
+$(GDT_C_OBJ): $(GDT_C_SRC)
+	$(CC) $(CFLAGS) -c -o $@ $< -MMD -MF $(@:.o=.d)
+
+$(IDT_ASM_OBJ): $(IDT_ASM_SRC)
+	$(AS) $(ASFLAGS) -o $@ $<
+
+$(IDT_C_OBJ): $(IDT_C_SRC)
+	$(CC) $(CFLAGS) -c -o $@ $< -MMD -MF $(@:.o=.d)
 
 $(BUILD_DIR)/%.o: core/%.c
 	$(CC) $(CFLAGS) -c -o $@ $< -MMD -MF $(@:.o=.d)
