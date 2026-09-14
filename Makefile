@@ -1,10 +1,13 @@
-BUILD_DIR =  build
+BUILD_DIR = build
 
-CC = gcc
 LD = ld
 AS = nasm
+CARGO = cargo
 
 ARCH := i386
+RUST_TARGET := i686-unknown-linux-gnu
+RUST_PROFILE_DIR := debug
+RUST_LIB = target/$(RUST_TARGET)/$(RUST_PROFILE_DIR)/libyorunix.a
 
 ENTRY_POINT = boot/entry.asm
 ENTRY_OBJ = $(BUILD_DIR)/entry.o
@@ -12,21 +15,8 @@ ENTRY_OBJ = $(BUILD_DIR)/entry.o
 GDT_ASM_SRC = arch/x86/gdt.asm
 GDT_ASM_OBJ = $(BUILD_DIR)/gdt_asm.o
 
-GDT_C_SRC = arch/x86/gdt.c
-GDT_C_OBJ = $(BUILD_DIR)/gdt.o
-
 IDT_ASM_SRC = arch/x86/idt.asm
 IDT_ASM_OBJ = $(BUILD_DIR)/idt_asm.o
-
-IDT_C_SRC = arch/x86/idt.c
-IDT_C_OBJ = $(BUILD_DIR)/idt.o
-
-# Drivers sources/objects
-DRV_SRC = $(wildcard drivers/*.c)
-DRV_OBJ = $(patsubst drivers/%.c,$(BUILD_DIR)/%.o,$(DRV_SRC))
-
-KERNEL_SRC = $(wildcard core/*.c)
-KERNEL_OBJ = $(patsubst core/%.c, $(BUILD_DIR)/%.o, $(KERNEL_SRC))
 
 LINKER_SCRIPT = link.ld
 
@@ -34,27 +24,28 @@ LINKER_SCRIPT = link.ld
 ISO_DIR = iso
 GRUB_CFG = boot/grub/grub.cfg
 
-CFLAGS = -ffreestanding -nostdlib -fno-builtin -fno-stack-protector -Wall -Wextra -Werror -Iinclude
-
-LINKER_FLAGS = -z noexecstack
+LINKER_FLAGS = -z noexecstack --gc-sections
 ASFLAGS =
 
 ifeq ($(ARCH), x86_64)
- CFLAGS += -m64
- LINKER_FLAGS += -m elf_x86_64
- ASFLAGS += -f elf64
+  LINKER_FLAGS += -m elf_x86_64
+  ASFLAGS += -f elf64
 else
- CFLAGS += -m32
- LINKER_FLAGS += -m elf_i386
- ASFLAGS += -f elf32
+  LINKER_FLAGS += -m elf_i386
+  ASFLAGS += -f elf32
 endif
 
-.PHONY: all clean run
+.PHONY: all clean run check iso run-grub
 
 all: $(BUILD_DIR)/kernel.bin
 
-$(BUILD_DIR)/kernel.bin: $(ENTRY_OBJ) $(GDT_ASM_OBJ) $(GDT_C_OBJ) $(IDT_ASM_OBJ) $(IDT_C_OBJ) $(KERNEL_OBJ) $(DRV_OBJ)
-	$(LD) $(LINKER_FLAGS) -T $(LINKER_SCRIPT) -o $@ $^
+# Núcleo Rust como staticlib (no_std, panic=abort). Contém:
+# vga.rs + gdt.rs + idt.rs + kernel_main + panic_handler.
+$(RUST_LIB): Cargo.toml rust-toolchain.toml src/lib.rs src/vga.rs src/gdt.rs src/idt.rs src/support.rs
+	$(CARGO) build --target $(RUST_TARGET)
+
+$(BUILD_DIR)/kernel.bin: $(ENTRY_OBJ) $(GDT_ASM_OBJ) $(IDT_ASM_OBJ) $(RUST_LIB)
+	$(LD) $(LINKER_FLAGS) -T $(LINKER_SCRIPT) -o $@ $(ENTRY_OBJ) $(GDT_ASM_OBJ) $(IDT_ASM_OBJ) $(RUST_LIB)
 
 $(ENTRY_OBJ): $(ENTRY_POINT)
 	$(AS) $(ASFLAGS) -o $@ $<
@@ -62,33 +53,23 @@ $(ENTRY_OBJ): $(ENTRY_POINT)
 $(GDT_ASM_OBJ): $(GDT_ASM_SRC)
 	$(AS) $(ASFLAGS) -o $@ $<
 
-$(GDT_C_OBJ): $(GDT_C_SRC)
-	$(CC) $(CFLAGS) -c -o $@ $< -MMD -MF $(@:.o=.d)
-
 $(IDT_ASM_OBJ): $(IDT_ASM_SRC)
 	$(AS) $(ASFLAGS) -o $@ $<
 
-$(IDT_C_OBJ): $(IDT_C_SRC)
-	$(CC) $(CFLAGS) -c -o $@ $< -MMD -MF $(@:.o=.d)
-
-$(BUILD_DIR)/%.o: core/%.c
-	$(CC) $(CFLAGS) -c -o $@ $< -MMD -MF $(@:.o=.d)
-
-$(BUILD_DIR)/%.o: drivers/%.c
-	$(CC) $(CFLAGS) -c -o $@ $< -MMD -MF $(@:.o=.d)
+check:
+	$(CARGO) check --target $(RUST_TARGET)
 
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -rf $(ISO_DIR)
+	$(CARGO) clean
 
 run: $(BUILD_DIR)/kernel.bin
 	qemu-system-x86_64 -kernel $<
 
 $(shell mkdir -p $(BUILD_DIR))
 
--include $(wildcard $(BUILD_DIR)/*.d)
-
-.PHONY: iso prepare-iso run-grub grub-install-instructions
+.PHONY: prepare-iso grub-install-instructions
 
 iso: $(BUILD_DIR)/kernel.bin
 	@rm -rf $(ISO_DIR)

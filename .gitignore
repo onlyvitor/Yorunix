@@ -1,5 +1,6 @@
-build
-iso
-EXPLANATION.md
-GDT_EXPLANATION.md
-IDT_EXPLANATION.md
+build/
+iso/
+target/
+.opencode/
+*.d
+
