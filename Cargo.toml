@@ -1,0 +1,17 @@
+[package]
+name = "yorunix"
+version = "0.1.0"
+edition = "2021"
+description = "YoRunix microkernel core in Rust (no_std, 32-bit x86), linked with NASM stubs"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "yorunix"
+crate-type = ["staticlib"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = 2
