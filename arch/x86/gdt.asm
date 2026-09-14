@@ -25,7 +25,7 @@ i686_GDT_Load:
     mov ds, ax
     mov es, ax
     mov fs, ax
-    mov gs, ax,
+    mov gs, ax
     mov ss, ax
 
     ; restore old call frame
