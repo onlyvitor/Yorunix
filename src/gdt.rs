@@ -81,9 +81,16 @@ static mut GDT: [GdtEntry; 3] = [
     ),
 ];
 
+#[cfg(not(test))]
 extern "C" {
     fn i686_GDT_Load(desc: *const GdtDescriptor, code: u16, data: u16);
 }
+
+/// Stub de teste: no host não há GDTR; só permite linkar e validar a chamada.
+// O nome replica o símbolo ASM de propósito.
+#[cfg(test)]
+#[allow(non_snake_case)]
+unsafe fn i686_GDT_Load(_desc: *const GdtDescriptor, _code: u16, _data: u16) {}
 
 /// Ponto de entrada chamado pelo `boot/entry.asm`.
 /// Mantém o nome/símbolo exato do C para não tocar o ASM.
@@ -100,5 +107,58 @@ pub extern "C" fn i686_GDT_Initialize() {
             base: core::ptr::addr_of!(GDT) as *const GdtEntry as u32,
         };
         i686_GDT_Load(&desc, CODE_SEGMENT, DATA_SEGMENT);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `assert_eq!` referencia os operandos, e campos de struct packed não
+    // admitem referência (E0793). Copiamos para locais antes de comparar.
+    fn fields(e: GdtEntry) -> (u16, u16, u8, u8, u8, u8) {
+        (
+            e.limit_low,
+            e.base_low,
+            e.base_middle,
+            e.access,
+            e.flags_limit_hi,
+            e.base_high,
+        )
+    }
+
+    #[test]
+    fn null_descriptor_is_zeroed() {
+        assert_eq!(fields(GdtEntry::new(0, 0, 0, 0)), (0, 0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn kernel_code_segment_encoding() {
+        let e = GdtEntry::new(
+            0,
+            0xFFFFF,
+            ACCESS_PRESENT | ACCESS_RING0 | ACCESS_CODE_SEGMENT | ACCESS_CODE_READABLE,
+            FLAG_32BIT | FLAG_GRANULARITY_4K,
+        );
+        // access = 0x80 | 0x18 | 0x02 = 0x9A; limite alto 0xF + flags 0xC0 = 0xCF.
+        assert_eq!(fields(e), (0xFFFF, 0, 0, 0x9A, 0xCF, 0));
+    }
+
+    #[test]
+    fn kernel_data_segment_encoding() {
+        let e = GdtEntry::new(
+            0,
+            0xFFFFF,
+            ACCESS_PRESENT | ACCESS_RING0 | ACCESS_DATA_SEGMENT | ACCESS_DATA_WRITEABLE,
+            FLAG_32BIT | FLAG_GRANULARITY_4K,
+        );
+        // access = 0x80 | 0x10 | 0x02 = 0x92.
+        assert_eq!(fields(e), (0xFFFF, 0, 0, 0x92, 0xCF, 0));
+    }
+
+    #[test]
+    fn base_and_limit_fields_split_correctly() {
+        let e = GdtEntry::new(0x12345678, 0xABCDE, 0, 0);
+        assert_eq!(fields(e), (0xBCDE, 0x5678, 0x34, 0, 0x0A, 0x12));
     }
 }

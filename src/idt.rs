@@ -69,6 +69,10 @@ static mut IDT: [IdtEntry; 256] = [IdtEntry {
 
 // Stubs NASM — expandidos para 0..31 no `idt.asm` (ver fix ASM).
 // Cada símbolo é o endereço do handler de baixo nível.
+// No `cargo test` (host) os .o do NASM não participam do link, então stubs
+// no-op com os mesmos símbolos satisfazem o linker; `idt_init` nunca é
+// chamado nos testes.
+#[cfg(not(test))]
 extern "C" {
     fn i686_ISR0();
     fn i686_ISR1();
@@ -104,18 +108,45 @@ extern "C" {
     fn i686_ISR31();
 }
 
+#[cfg(test)]
+macro_rules! define_test_isr_stubs {
+    ($($name:ident),*) => {
+        $(
+            // Nomes replicam os símbolos ASM de propósito.
+            #[allow(dead_code, non_snake_case)]
+            unsafe extern "C" fn $name() {}
+        )*
+    };
+}
+
+#[cfg(test)]
+define_test_isr_stubs!(
+    i686_ISR0, i686_ISR1, i686_ISR2, i686_ISR3, i686_ISR4, i686_ISR5,
+    i686_ISR6, i686_ISR7, i686_ISR8, i686_ISR9, i686_ISR10, i686_ISR11,
+    i686_ISR12, i686_ISR13, i686_ISR14, i686_ISR15, i686_ISR16, i686_ISR17,
+    i686_ISR18, i686_ISR19, i686_ISR20, i686_ISR21, i686_ISR22, i686_ISR23,
+    i686_ISR24, i686_ISR25, i686_ISR26, i686_ISR27, i686_ISR28, i686_ISR29,
+    i686_ISR30, i686_ISR31
+);
+
+/// Construtor puro de gate — mesma codificação usada no boot, sem tocar na
+/// tabela global, para ser unitariamente testável no host.
+const fn make_gate(base: u32, selector: u16, attr: u8) -> IdtEntry {
+    IdtEntry {
+        base_low: (base & 0xFFFF) as u16,
+        selector,
+        zero: 0,
+        attr,
+        base_high: ((base >> 16) & 0xFFFF) as u16,
+    }
+}
+
 fn set_gate(num: usize, base: u32, selector: u16, attr: u8) {
     // SAFETY: chamador garante `num < 256`. Campos escritos uma única vez no
     // boot com `cli`, antes de qualquer interrupção ser habilitada.
     unsafe {
         let entry = &mut *core::ptr::addr_of_mut!(IDT).cast::<[IdtEntry; 256]>();
-        entry[num] = IdtEntry {
-            base_low: (base & 0xFFFF) as u16,
-            selector,
-            zero: 0,
-            attr,
-            base_high: ((base >> 16) & 0xFFFF) as u16,
-        };
+        entry[num] = make_gate(base, selector, attr);
     }
 }
 
@@ -151,5 +182,31 @@ pub extern "C" fn idt_init() {
             base: core::ptr::addr_of!(IDT) as *const IdtEntry as u32,
         };
         core::arch::asm!("lidt [{}]", in(reg) &desc, options(nostack, preserves_flags));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Ver nota em gdt::tests: campos packed são copiados, nunca referenciados.
+    fn fields(g: IdtEntry) -> (u16, u16, u8, u8, u16) {
+        (g.base_low, g.selector, g.zero, g.attr, g.base_high)
+    }
+
+    #[test]
+    fn gate_splits_handler_address() {
+        let g = make_gate(
+            0x12345678,
+            SELECTOR_KERNEL_CODE,
+            PRESENT | RING0 | TYPE_INTERRUPT_GATE,
+        );
+        // attr = 0x80 | 0x0E = 0x8E; base 0x12345678 -> low 0x5678, high 0x1234.
+        assert_eq!(fields(g), (0x5678, 0x08, 0, 0x8E, 0x1234));
+    }
+
+    #[test]
+    fn null_gate_is_zeroed() {
+        assert_eq!(fields(make_gate(0, 0, 0)), (0, 0, 0, 0, 0));
     }
 }

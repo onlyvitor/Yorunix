@@ -15,3 +15,8 @@ panic = "abort"
 [profile.release]
 panic = "abort"
 opt-level = 2
+
+# O harness do libtest precisa de unwind para relatar falhas; sem isso um
+# assert falho abortaria o runner em vez de registrar o teste como falho.
+[profile.test]
+panic = "unwind"

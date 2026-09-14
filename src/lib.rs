@@ -4,18 +4,24 @@
 //! (`entry.o`, `gdt_asm.o`, `idt_asm.o`). O `_start` continua em ASM e chama
 //! `i686_GDT_Initialize -> idt_init -> kernel_main`.
 
-#![no_std]
-#![no_main]
+#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_main)]
 
 pub mod gdt;
 pub mod idt;
+#[cfg(not(test))]
 pub mod support;
 pub mod vga;
 
 use core::arch::asm;
+#[cfg(not(test))]
 use core::panic::PanicInfo;
 
 /// Sem runtime: pânico apenas trava a CPU de forma segura.
+///
+/// Compilado só fora de `cargo test`: no host de teste o `std` já fornece o
+/// handler, e dois `#[panic_handler]` seriam `duplicate lang item panic_impl`.
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     loop {
