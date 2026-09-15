@@ -94,7 +94,7 @@ One subtlety worth keeping: the `test` profile uses `panic = "unwind"` while dev
 - **No allocator yet.** When one lands, Rust's ownership will matter even more — allocation bugs (leaks, double-frees, dangling) are precisely the class of bug the language eliminates in safe code.
 - **Rust doesn't replace hardware knowledge.** You still must know what `lgdt` does, why gates are 8 bytes, and what `pusha` pushes. The language checks *your* understanding; it doesn't supply it.
 
-## Migration log — bugs found in the C original
+## Migration log: bugs found in the C original
 
 The most persuasive argument for the migration is that the C code carried real, observable bugs. Each row is documented in the module that fixed it:
 
