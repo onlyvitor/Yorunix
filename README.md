@@ -1,5 +1,7 @@
 # YoRunix - A Minimal Microkernel
 
+[![CI](https://github.com/onlyvitor/Yorunix/actions/workflows/ci.yml/badge.svg)](https://github.com/onlyvitor/Yorunix/actions/workflows/ci.yml)
+
 YoRunix is a lightweight, educational microkernel for 32-bit x86. The kernel core is written in **Rust** (`no_std`, `no_main`, compiled as a `staticlib`), with the low-level boot and CPU-table plumbing in **x86 32-bit assembly (NASM)**. It focuses on demonstrating fundamental operating system concepts: Multiboot booting, protected mode, descriptor tables (GDT/IDT), and bare-metal output on VGA text mode.
 
 ## Overview
@@ -167,6 +169,18 @@ Remove all build artifacts (Makefile outputs, ISO tree and Cargo `target/`):
 ```bash
 make clean
 ```
+
+## CI/CD
+
+The pipeline runs on GitHub Actions (`.github/workflows/`):
+
+- **CI** (`ci.yml`) — on every push to `main` and every pull request, two parallel jobs:
+  - **Lint and test**: `cargo fmt --check`, `cargo clippy -D warnings` for both the host (covers the `cfg(test)` code) and the `i686-unknown-linux-gnu` target (the kernel's real codegen), plus the host unit tests
+  - **Build and boot smoke test**: full `make` (cargo staticlib + NASM + `ld`), then a headless QEMU run — the kernel must survive 10 s in its `hlt` loop without any triple fault/reboot (verified by QEMU's `cpu_reset` log); `kernel.bin` is uploaded as a workflow artifact
+- **Release** (`release.yml`) — pushing a tag (`git tag v0.1.0 && git push --tags`) runs the tests, builds the kernel and the GRUB ISO, and publishes both on a GitHub Release
+- **Dependabot** (`dependabot.yml`) — keeps the workflow actions updated weekly
+
+Recommended repository setting: enable branch protection on `main` and require the **Lint and test** and **Build kernel and boot smoke test** checks before merging.
 
 ## Boot Flow (boot/entry.asm)
 
