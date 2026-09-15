@@ -56,16 +56,65 @@ To build and run YoRunix, you need:
 - **QEMU** - for emulating x86 hardware
 - **grub-mkrescue + xorriso** *(optional)* - only for building the bootable ISO
 
-### Installation (Ubuntu/Debian)
+### Installation
+
+Install the Rust toolchain first (same on every distro), then the native tools for your distribution.
+
+**Rust (any distro, via [rustup](https://rustup.rs)):**
 
 ```bash
-# Rust with the 32-bit target
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup target add i686-unknown-linux-gnu
+```
 
+> The repository also pins the toolchain in `rust-toolchain.toml`: with rustup installed, entering the project directory resolves `stable` + the `i686-unknown-linux-gnu` target automatically.
+
+**Ubuntu / Debian / Mint:**
+
+```bash
 sudo apt install nasm binutils qemu-system-x86
 
-# Optional, only needed for `make iso` / `make run-grub`
-sudo apt install grub2-common xorriso
+# Optional, only needed for `make iso` / `make run-grub`:
+sudo apt install grub-common grub-pc-bin xorriso mtools
+```
+
+**Fedora:**
+
+```bash
+sudo dnf install nasm binutils qemu-system-x86
+
+# Optional, only needed for `make iso` / `make run-grub`:
+sudo dnf install grub2-tools grub2-pc-modules xorriso mtools
+```
+
+**Arch Linux:**
+
+```bash
+sudo pacman -S --needed nasm binutils qemu-desktop
+
+# Optional, only needed for `make iso` / `make run-grub`:
+sudo pacman -S --needed grub xorriso mtools
+```
+
+**openSUSE:**
+
+```bash
+sudo zypper install nasm binutils qemu-x86
+
+# Optional, only needed for `make iso` / `make run-grub`:
+sudo zypper install grub2 grub2-i386-pc xorriso mtools
+```
+
+> **Note (Fedora / openSUSE):** these distros name the GRUB tools `grub2-*` (e.g. `grub2-mkrescue`), while the Makefile calls `grub-mkrescue`. If `make iso` reports it missing, add a symlink:
+>
+> ```bash
+> sudo ln -s "$(which grub2-mkrescue)" /usr/local/bin/grub-mkrescue
+> ```
+
+**Verify the toolchain:**
+
+```bash
+cargo --version && nasm -v && ld -v && qemu-system-x86_64 --version
 ```
 
 ## Building
