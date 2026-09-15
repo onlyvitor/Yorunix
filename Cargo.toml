@@ -16,7 +16,8 @@ panic = "abort"
 panic = "abort"
 opt-level = 2
 
-# O harness do libtest precisa de unwind para relatar falhas; sem isso um
-# assert falho abortaria o runner em vez de registrar o teste como falho.
-[profile.test]
-panic = "unwind"
+# Nota: o cargo ignora `panic` no perfil `test` e força unwind — o harness do
+# libtest precisa dele para relatar falhas (um assert falho registra o teste
+# como falho em vez de abortar o runner). Por isso os testes de host funcionam
+# mesmo com `panic = "abort"` em dev/release. Não declare `panic` aqui: só
+# gera warning.

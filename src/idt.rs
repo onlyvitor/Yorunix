@@ -121,12 +121,10 @@ macro_rules! define_test_isr_stubs {
 
 #[cfg(test)]
 define_test_isr_stubs!(
-    i686_ISR0, i686_ISR1, i686_ISR2, i686_ISR3, i686_ISR4, i686_ISR5,
-    i686_ISR6, i686_ISR7, i686_ISR8, i686_ISR9, i686_ISR10, i686_ISR11,
-    i686_ISR12, i686_ISR13, i686_ISR14, i686_ISR15, i686_ISR16, i686_ISR17,
-    i686_ISR18, i686_ISR19, i686_ISR20, i686_ISR21, i686_ISR22, i686_ISR23,
-    i686_ISR24, i686_ISR25, i686_ISR26, i686_ISR27, i686_ISR28, i686_ISR29,
-    i686_ISR30, i686_ISR31
+    i686_ISR0, i686_ISR1, i686_ISR2, i686_ISR3, i686_ISR4, i686_ISR5, i686_ISR6, i686_ISR7,
+    i686_ISR8, i686_ISR9, i686_ISR10, i686_ISR11, i686_ISR12, i686_ISR13, i686_ISR14, i686_ISR15,
+    i686_ISR16, i686_ISR17, i686_ISR18, i686_ISR19, i686_ISR20, i686_ISR21, i686_ISR22, i686_ISR23,
+    i686_ISR24, i686_ISR25, i686_ISR26, i686_ISR27, i686_ISR28, i686_ISR29, i686_ISR30, i686_ISR31
 );
 
 /// Construtor puro de gate — mesma codificação usada no boot, sem tocar na
@@ -167,15 +165,20 @@ pub extern "C" fn idt_init() {
     // concorrência no boot (`cli` no `_start`).
     unsafe {
         let handlers: [unsafe extern "C" fn(); 32] = [
-            i686_ISR0, i686_ISR1, i686_ISR2, i686_ISR3, i686_ISR4, i686_ISR5,
-            i686_ISR6, i686_ISR7, i686_ISR8, i686_ISR9, i686_ISR10, i686_ISR11,
-            i686_ISR12, i686_ISR13, i686_ISR14, i686_ISR15, i686_ISR16,
-            i686_ISR17, i686_ISR18, i686_ISR19, i686_ISR20, i686_ISR21,
-            i686_ISR22, i686_ISR23, i686_ISR24, i686_ISR25, i686_ISR26,
-            i686_ISR27, i686_ISR28, i686_ISR29, i686_ISR30, i686_ISR31,
+            i686_ISR0, i686_ISR1, i686_ISR2, i686_ISR3, i686_ISR4, i686_ISR5, i686_ISR6, i686_ISR7,
+            i686_ISR8, i686_ISR9, i686_ISR10, i686_ISR11, i686_ISR12, i686_ISR13, i686_ISR14,
+            i686_ISR15, i686_ISR16, i686_ISR17, i686_ISR18, i686_ISR19, i686_ISR20, i686_ISR21,
+            i686_ISR22, i686_ISR23, i686_ISR24, i686_ISR25, i686_ISR26, i686_ISR27, i686_ISR28,
+            i686_ISR29, i686_ISR30, i686_ISR31,
         ];
         for (i, h) in handlers.iter().enumerate() {
-            set_gate(i, *h as u32, SELECTOR_KERNEL_CODE, ATTR);
+            // No alvo real (i686) um `u32` cobre todo endereço — não há
+            // truncamento. O warning de truncamento só existe no host
+            // 64-bit (onde `idt_init` é compilado mas nunca chamado), e a
+            // variante sem truncamento dispara no i686.
+            #[allow(clippy::fn_to_numeric_cast, clippy::fn_to_numeric_cast_with_truncation)]
+            let addr = *h as u32;
+            set_gate(i, addr, SELECTOR_KERNEL_CODE, ATTR);
         }
         let desc = IdtDescriptor {
             limit: (size_of::<[IdtEntry; 256]>() - 1) as u16,

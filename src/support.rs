@@ -14,16 +14,30 @@ use core::slice::{from_raw_parts, from_raw_parts_mut};
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}
 
+/// Equivalente freestanding do `memcpy` da libc.
+///
+/// # Safety
+///
+/// Chamador garante que `dest` e `src` apontam para regiões válidas de `n`
+/// bytes, que não se sobrepõem, e que `dest` é gravável. Sobreposição é UB —
+/// use `memmove`.
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void {
-    // SAFETY: contrato C padrão — chamador garante regiões válidas, não
-    // sobrepostas, com `n` bytes. Copia byte-a-byte sem otimizações agressivas.
+    // SAFETY: contrato C padrão documentado acima. Copia byte-a-byte sem
+    // otimizações agressivas.
     let d = from_raw_parts_mut(dest.cast::<u8>(), n);
     let s = from_raw_parts(src.cast::<u8>(), n);
     d.copy_from_slice(s);
     dest
 }
 
+/// Equivalente freestanding do `memmove` da libc.
+///
+/// # Safety
+///
+/// Chamador garante que `dest` e `src` apontam para regiões válidas de `n`
+/// bytes e que `dest` é gravável. Ao contrário do `memcpy`, sobreposição é
+/// permitida.
 #[no_mangle]
 pub unsafe extern "C" fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void {
     // SAFETY: mesmo contrato do `memcpy`, mas permite sobreposição (cópia
@@ -34,6 +48,11 @@ pub unsafe extern "C" fn memmove(dest: *mut c_void, src: *const c_void, n: usize
     dest
 }
 
+/// Equivalente freestanding do `memset` da libc.
+///
+/// # Safety
+///
+/// Chamador garante que `s` aponta para uma região gravável de `n` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void {
     // SAFETY: chamador garante `n` bytes escrevíveis em `s`.
@@ -43,6 +62,12 @@ pub unsafe extern "C" fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void
     s
 }
 
+/// Equivalente freestanding do `memcmp` da libc.
+///
+/// # Safety
+///
+/// Chamador garante que `s1` e `s2` apontam para regiões legíveis de `n`
+/// bytes.
 #[no_mangle]
 pub unsafe extern "C" fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32 {
     // SAFETY: chamador garante `n` bytes legíveis em ambos os ponteiros.
@@ -56,7 +81,11 @@ pub unsafe extern "C" fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) 
     0
 }
 
-/// Alguns objetos do `core` referenciam `bcmp` (alias BSD de `memcmp`).
+/// Alias BSD de `memcmp`, referenciado por alguns objetos do `core`.
+///
+/// # Safety
+///
+/// Mesmo contrato do `memcmp`.
 #[no_mangle]
 pub unsafe extern "C" fn bcmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32 {
     // SAFETY: ver `memcmp`.
