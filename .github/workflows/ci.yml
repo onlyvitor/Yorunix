@@ -18,7 +18,7 @@ jobs:
     name: Lint and test (host + i686)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Lê rust-toolchain.toml (stable + target i686-unknown-linux-gnu) e
       # já configura cache do cargo.
@@ -43,7 +43,7 @@ jobs:
     name: Build kernel and boot smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
