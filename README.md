@@ -1,10 +1,10 @@
 # YoRunix - A Minimal Microkernel
 
-YoRunix is a lightweight, educational microkernel written in x86 32-bit assembly and C. It focuses on demonstrating fundamental operating system concepts including bootloading, protected mode, process management, and interrupt handling.
+YoRunix is a lightweight, educational microkernel for 32-bit x86. The kernel core is written in **Rust** (`no_std`, `no_main`, compiled as a `staticlib`), with the low-level boot and CPU-table plumbing in **x86 32-bit assembly (NASM)**. It focuses on demonstrating fundamental operating system concepts: Multiboot booting, protected mode, descriptor tables (GDT/IDT), and bare-metal output on VGA text mode.
 
 ## Overview
 
-YoRunix is designed as a **microkernel architecture** where the core kernel remains small and minimal, with most operating system services implemented as user-space processes or modules. This approach promotes:
+YoRunix is designed as a **microkernel architecture** where the core kernel remains small and minimal, with most operating system services planned as user-space processes or modules. This approach promotes:
 
 - **Modularity**: Core services are decoupled and can be developed independently
 - **Stability**: A failure in a non-critical service doesn't crash the entire system
@@ -15,32 +15,47 @@ YoRunix is designed as a **microkernel architecture** where the core kernel rema
 
 ```
 yorunix/
+├── arch/
+│   └── x86/
+│       ├── gdt.asm         # i686_GDT_Load: lgdt + segment reload (far retf)
+│       └── idt.asm         # ISR stubs 0..31 + common handler trampoline
 ├── boot/
-│   └── boot.asm           # x86 bootloader and entry point (Multiboot compatible)
-├── core/
-│   └── kernel.c           # Microkernel core implementation
-|-- divers/
-|   |---vga.c
-├── include/               # Header files
-|   |---vga.h
-├── Makefile              # Build configuration
-└── link.ld               # Linker script
-
+│   ├── entry.asm           # Multiboot header, stack setup and _start entry point
+│   └── grub/
+│       └── grub.cfg        # GRUB menu configuration for the bootable ISO
+├── src/                    # Kernel core in Rust (no_std)
+│   ├── lib.rs              # Crate root: kernel_main + panic handler (hlt loop)
+│   ├── vga.rs              # VGA text-mode driver (80x25, MMIO 0xB8000)
+│   ├── gdt.rs              # GDT construction (null, kernel code, kernel data)
+│   ├── idt.rs              # IDT construction + 256-gate table, exception gates
+│   └── support.rs          # Freestanding memcpy/memset/memcmp/bcmp + eh personality
+├── Cargo.toml              # Rust package (staticlib, panic = abort)
+├── rust-toolchain.toml     # Stable toolchain pinned to i686-unknown-linux-gnu
+├── Makefile                # Build configuration
+├── link.ld                 # Linker script (loads kernel at 1 MiB)
+└── LICENSE                 # BSD 3-Clause
 ```
 
 ## Requirements
 
 To build and run YoRunix, you need:
 
-- **NASM** (Netwide Assembler) - for assembling x86 code
-- **GCC** (with 32-bit support) - for compiling C code
-- **GNU LD** (Linker) - for linking object files
+- **Rust** (stable, via `rustup`) - kernel core, targeting `i686-unknown-linux-gnu`
+- **NASM** (Netwide Assembler) - for assembling the x86 32-bit stubs
+- **GNU LD** (binutils) - for linking the final kernel image (`elf_i386`)
 - **QEMU** - for emulating x86 hardware
+- **grub-mkrescue + xorriso** *(optional)* - only for building the bootable ISO
 
 ### Installation (Ubuntu/Debian)
 
 ```bash
-sudo apt install nasm gcc-multilib g++-multilib binutils qemu-system-x86
+# Rust with the 32-bit target
+rustup target add i686-unknown-linux-gnu
+
+sudo apt install nasm binutils qemu-system-x86
+
+# Optional, only needed for `make iso` / `make run-grub`
+sudo apt install grub2-common xorriso
 ```
 
 ## Building
@@ -52,53 +67,86 @@ make
 ```
 
 This will:
-1. Assemble `boot/boot.asm` using NASM (32-bit ELF format)
-2. Compile `core/*.c` using GCC with freestanding flags
-3. Link all object files into `build/kernel.bin`
+1. Compile the Rust kernel core with `cargo build --target i686-unknown-linux-gnu` into a `staticlib` (`libyorunix.a`)
+2. Assemble `boot/entry.asm`, `arch/x86/gdt.asm` and `arch/x86/idt.asm` using NASM (32-bit ELF format)
+3. Link everything with `ld -m elf_i386 -T link.ld` into `build/kernel.bin`
 
 ### Build Output
 
-- `build/boot.o` - Compiled bootloader
-- `build/kernel.o` - Compiled kernel core
-- `build/kernel.bin` - Final executable kernel image
+- `target/i686-unknown-linux-gnu/debug/libyorunix.a` - Rust kernel core (static library)
+- `build/entry.o`, `build/gdt_asm.o`, `build/idt_asm.o` - Assembled NASM objects
+- `build/kernel.bin` - Final executable Multiboot kernel image
+
+### Checking and Testing
+
+```bash
+make check      # cargo check for the i686 target
+cargo test      # host unit tests (GDT/IDT gate encoding, etc.)
+```
+
+Unit tests run on the host: the `std` panic handler is used there, and NASM symbols are replaced by cfg-gated no-op stubs, so the tests validate pure logic (descriptor encodings, field splitting) without hardware.
 
 ## Running
 
-To execute the kernel in QEMU:
+To execute the kernel in QEMU using QEMU's built-in Multiboot loader:
 
 ```bash
 make run
 ```
 
-This launches the kernel in a QEMU x86 emulator with 32-bit mode.
+Or boot through a real GRUB flow by building an ISO (requires `grub-mkrescue` and `xorriso`):
+
+```bash
+make iso         # creates build/kernel.iso with boot/grub/grub.cfg
+make run-grub    # boots the ISO with QEMU (-cdrom, GRUB menu)
+```
 
 ## Cleaning
 
-Remove all build artifacts:
+Remove all build artifacts (Makefile outputs, ISO tree and Cargo `target/`):
 
 ```bash
 make clean
 ```
 
-## Bootloader (boot/boot.asm)
+## Boot Flow (boot/entry.asm)
 
-The bootloader is **Multiboot-compliant**, allowing GRUB or other Multiboot loaders to boot the kernel. Key features:
+The entry stub is **Multiboot-compliant**, allowing GRUB (or QEMU's `-kernel`) to boot the kernel. On boot:
 
-- **Magic Number**: `0x1BADB002` - Identifies the kernel as Multiboot-compatible
-- **Stack Setup**: Allocates 16 KB for kernel stack
-- **Entry Point**: `_start` - Where execution begins after boot
-- **Kernel Call**: Transfers control to `kernel_main()` function
+1. **Multiboot header**: magic `0x1BADB002`, placed in a dedicated `.multiboot` section kept in the first 8 KiB of the image by the linker script
+2. **Stack setup**: `cli`, then 16 KB stack allocated in `.bss`, 16-byte aligned
+3. **GDT initialization**: calls `i686_GDT_Initialize` (Rust) → `i686_GDT_Load` (NASM: `lgdt`, far `retf` to reload CS, reload DS/ES/FS/GS/SS)
+4. **IDT initialization**: calls `idt_init` (Rust) → fills 256 gates (`lidt`) with 32 exception stubs
+5. **Kernel call**: transfers control to `kernel_main()` (Rust), which clears the VGA screen, prints a welcome message and `hlt`-loops
 
-The bootloader handles the transition from BIOS 16-bit real mode to 32-bit protected mode (handled by the bootloader, not by this code).
+The transition from BIOS 16-bit real mode to 32-bit protected mode is performed by the bootloader (GRUB), not by this code.
+
+## Kernel Components
+
+### VGA text mode (src/vga.rs)
+Safe wrapper over the memory-mapped text buffer at `0xB8000` (80x25 cells, white-on-black). Uses `write_volatile`/`read_volatile` so MMIO writes are never optimized away. `clear_screen` fills all 2000 cells with spaces; `putstr` handles `\n`, line wrap and screen-bounds truncation.
+
+### GDT (src/gdt.rs)
+Three descriptors: NULL, kernel code (`0x08`) and kernel data (`0x10`), both ring 0, 32-bit, 4 KiB granularity (full 4 GB flat model). Entries are `#[repr(C, packed)]` with compile-time size assertions, keeping ABI compatibility with the NASM loader.
+
+### IDT (src/idt.rs)
+A 256-entry Interrupt Descriptor Table with the first 32 gates (CPU exceptions) wired to NASM stubs (`i686_ISR0`..`i686_ISR31`). Stubs push an interrupt number (plus a dummy 0 when the CPU doesn't push an error code), then trampoline into the common handler, which saves all registers (`pusha`), reloads data segments and calls the Rust `i686_ISR_handler` with an `InterruptFrame`. The handler is currently a no-op placeholder.
+
+### Freestanding support (src/support.rs)
+Bare-metal linking without libc requires `memcpy`, `memmove`, `memset`, `memcmp`, `bcmp` and `rust_eh_personality`; this module provides minimal byte-wise implementations.
+
+### Panic behavior
+In the kernel (`panic = "abort"`, `no_std`), a panic enters a safe `hlt` loop - there is nothing to unwind into.
 
 ## Microkernel Architecture
 
 YoRunix follows microkernel design principles:
 
-### Core Kernel Responsibilities
-- Interrupt/exception handling
-- Process/thread scheduling
+### Core Kernel Responsibilities (current/planned)
+- Boot and CPU tables: GDT, IDT, exception stubs *(done)*
+- Interrupt/exception handling *(stubs in place, dispatch pending)*
 - Memory management (basic paging)
+- Process/thread scheduling
 - Inter-process communication (IPC)
 
 ### User-Space Services (Future)
@@ -107,35 +155,38 @@ YoRunix follows microkernel design principles:
 - Network stack
 - System utilities
 
-This separation allows the kernel to remain small (&lt;100 KB) while delegating complex functionality to user-space.
+This separation allows the kernel to remain small while delegating complex functionality to user-space.
 
 ## Development Roadmap
 
-- [x] Bootloader setup (Multiboot)
-- [x] Build system (Makefile)
+- [x] Build system (Makefile + Cargo staticlib)
+- [x] Bootloader setup (Multiboot, GRUB ISO)
 - [x] GDT (Global Descriptor Table) setup
-- [x] IDT (Interrupt Descriptor Table) setup
-- [ ] Basic process management
+- [x] IDT (Interrupt Descriptor Table) + exception stubs
+- [x] VGA text-mode output driver
+- [ ] Interrupt dispatch in Rust (`i686_ISR_handler` per-vector handling)
+- [ ] IRQs: PIC remapping, timer and keyboard drivers
 - [ ] Memory management (paging)
+- [ ] Basic process management
 - [ ] Inter-process communication
-- [ ] Simple device drivers
 - [ ] Basic file system
 
 ## References
 
 Inspired by and based on concepts from:
-- **"Operating Systems: Design and Implementation"** (Andrew S. Tanenbaum & Albert S. Woodhall) - *"Sistemas Operacionais: Projeto e Implementação"*
+- **"Operating Systems: Design and Implementation"** (Andrew S. Tanenbaum & Albert S. Woodhull) - *"Sistemas Operacionais: Projeto e Implementação"*
 
 Additional references:
 - [OSDev Wiki](https://wiki.osdev.org/)
 - [Multiboot Specification](https://www.gnu.org/software/grub/manual/multiboot/)
+- [Rustonomicon - Freestanding Rust](https://doc.rust-lang.org/nomicon/what-does-unsafe-mean.html) & [Bare Metal Rust](https://os.phil-opp.com/)
 - [Intel x86 Architecture](https://en.wikipedia.org/wiki/X86)
 - [Microkernel Architecture](https://en.wikipedia.org/wiki/Microkernel)
 
 ## License
 
-YoRunix is provided for educational purposes. Feel free to modify and learn from it.
+YoRunix is licensed under the BSD 3-Clause License - see [LICENSE](LICENSE).
 
 ## Author
 
-Vito - Educational OS Development Project
+Vitor (Vitor Gabriel Nascimento França) - Educational OS Development Project
