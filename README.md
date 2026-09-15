@@ -11,6 +11,16 @@ YoRunix is designed as a **microkernel architecture** where the core kernel rema
 - **Extensibility**: New services can be added without modifying the kernel
 - **Security**: Services run with minimal privileges, reducing attack surface
 
+## Documentation
+
+In-depth design docs live in [`docs/`](docs/README.md), each explaining *how it works, why we did it, and why it matters*:
+
+- [Boot flow](docs/boot.md) — Multiboot, protected mode, the entry sequence
+- [Build system](docs/build-system.md) — freestanding linking of the Rust staticlib and NASM objects
+- [GDT](docs/gdt.md) / [IDT & interrupts](docs/idt-interrupts.md) — CPU tables and exception handling
+- [VGA driver](docs/vga-driver.md) — the first driver and memory-mapped I/O
+- [Rust for OS dev](docs/rust-for-osdev.md) — why the core is Rust, with the C→Rust migration log
+
 ## Project Structure
 
 ```
