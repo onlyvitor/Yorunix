@@ -52,7 +52,7 @@ Nobody provides those symbols in a freestanding link — so we do, byte-wise and
 | Profile | Setting | Why |
 |---|---|---|
 | `dev`, `release` | `panic = "abort"` | There is nothing to unwind to on bare metal. Unwind machinery would pull in landing pads and personality functions for no benefit. A panic is a controlled `hlt` loop (`src/lib.rs:26-32`). |
-| `test` | `panic = "unwind"` | The libtest harness needs unwinding to catch a failing `assert_eq!` and report it as a test failure. With `abort`, a failed assert would kill the whole test runner instead of logging one red test. |
+| `test` | *(unwind, forced by cargo)* | Cargo ignores explicit `panic` settings in the test profile and always uses unwinding — the libtest harness needs it to catch a failing `assert_eq!` and report it as a test failure instead of aborting the whole runner. This is why host tests work even though dev/release use `abort`. |
 
 ### Make targets
 

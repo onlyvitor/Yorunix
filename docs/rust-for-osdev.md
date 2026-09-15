@@ -85,7 +85,7 @@ The test build flips `std` back on (`cfg_attr(not(test), ...)` — `lib.rs:7-8`)
 
 What's tested: GDT entry encoding (including the `0x9A/0xCF` / `0x92/0xCF` flat-model values and base/limit field splitting), IDT gate encoding (`0x8E`, address split), null-entry zeroing. What isn't: anything touching real registers — that's what `make run` in QEMU is for.
 
-One subtlety worth keeping: the `test` profile uses `panic = "unwind"` while dev/release use `abort` (`Cargo.toml:19-21`) because the libtest harness needs unwinding to *report* a failed assert; with abort, one failing test would abort the runner instead of logging a failure.
+One subtlety worth keeping: dev/release use `panic = "abort"`, but cargo **forces unwind in the test profile** (explicit `panic` settings there are ignored) because the libtest harness needs unwinding to *report* a failed assert — with abort, one failing test would abort the runner instead of logging a failure. That's why host tests work unchanged.
 
 ## Honest limits
 
