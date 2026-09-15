@@ -1,0 +1,43 @@
+name: Release
+
+# Publica a ISO de boot no GitHub Release quando uma tag v* é empurrada:
+#   git tag v0.1.0 && git push --tags
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build ISO and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # Mesmo conjunto de pacotes documentado no README (seção Installation,
+      # Ubuntu/Debian) para o `make iso`: nasm para montar, grub-common +
+      # grub-pc-bin (módulos i386-pc) + mtools + xorriso para o grub-mkrescue.
+      - name: Install toolchain packages
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            nasm grub-common grub-pc-bin mtools xorriso
+
+      - name: Unit tests (release guard)
+        run: cargo test --all-targets
+
+      - name: Build kernel and ISO
+        run: make && make iso
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/kernel.iso
+            build/kernel.bin
+          generate_release_notes: true
