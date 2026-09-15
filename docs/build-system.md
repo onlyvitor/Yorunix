@@ -47,7 +47,7 @@ A normal Rust build lets `rustc` (which invokes a C compiler driver) drive the l
 
 Nobody provides those symbols in a freestanding link — so we do, byte-wise and libc-free, in `src/support.rs:14-63`. This is not optional: without that file the link fails with undefined references (or worse, succeeds with the wrong semantic if a host libc sneaks in).
 
-### Panic strategy (`Cargo.toml:12-21`)
+### Panic strategy (`Cargo.toml:12-17`)
 
 | Profile | Setting | Why |
 |---|---|---|
