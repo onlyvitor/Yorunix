@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint and test (host + i686)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Lê rust-toolchain.toml (stable + target i686-unknown-linux-gnu) e
+      # já configura cache do cargo.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (host — cobre o código de cfg(test))
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy (i686 — o alvo real do kernel)
+        run: cargo clippy --target i686-unknown-linux-gnu -- -D warnings
+
+      # Os testes rodam no host: sob cfg(test) o std volta e os símbolos NASM
+      # são substituídos por stubs (src/gdt.rs, src/idt.rs). Não precisa de
+      # glibc 32-bit no runner.
+      - name: Unit tests
+        run: cargo test --all-targets
+
+  build:
+    name: Build kernel and boot smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install NASM
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nasm
+
+      - name: Build (cargo staticlib + NASM + ld)
+        run: make
+
+      # Smoke test de boot: o kernel não imprime em serial (só VGA), então a
+      # verificação é "não crashou", validada em duas dimensões:
+      #   1. exit == 124 — o timeout matou o QEMU com o kernel vivo no loop
+      #      hlt. Com -no-reboot, um triple fault encerra o QEMU antes
+      #      (exit != 124).
+      #   2. exatamente 2 "CPU Reset" no log — são os dois resets de partida
+      #      do QEMU/SeaBIOS (verificados localmente). Se o kernel entrar em
+      #      loop de reboot, o contador cresce.
+      # Limitação conhecida: uma exceção em loop infinito (handler no-op
+      # retorna por iret) mantém o QEMU vivo — essa classe de regressão só é
+      # detectável quando o kernel emitir algo por serial.
+      - name: QEMU boot smoke test
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qemu-system-x86
+          set +e
+          timeout 10 qemu-system-x86_64 \
+            -kernel build/kernel.bin \
+            -display none \
+            -no-reboot \
+            -d cpu_reset \
+            -D qemu-reset.log
+          code=$?
+          set -e
+          resets=$(grep -c 'CPU Reset' qemu-reset.log || true)
+          echo "exit=$code resets=$resets"
+          test "$code" -eq 124
+          test "$resets" -eq 2
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-bin
+          path: build/kernel.bin
+
+      - name: Upload reset log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-reset-log
+          path: qemu-reset.log
