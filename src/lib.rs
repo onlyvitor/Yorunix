@@ -12,6 +12,7 @@ pub mod idt;
 #[cfg(not(test))]
 pub mod support;
 pub mod vga;
+pub mod handler;
 
 use core::arch::asm;
 #[cfg(not(test))]
@@ -36,7 +37,7 @@ fn panic(_info: &PanicInfo) -> ! {
 #[no_mangle]
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
-    vga::putstr("Bem-vindo ao YorUnix!");
+    vga::putstr("Bem-vindo ao Yorunix!");
     loop {
         // SAFETY: `hlt` economiza energia até a próxima interrupção; o loop
         // garante que nunca retornamos ao chamador ASM.

@@ -152,8 +152,7 @@ fn set_gate(num: usize, base: u32, selector: u16, attr: u8) {
 /// Próximo passo sugerido: despachar por `int_num` e imprimir via VGA.
 #[no_mangle]
 pub extern "C" fn i686_ISR_handler(_frame: *mut InterruptFrame) {
-    // Intencionalmente vazio nesta fase — mesma semântica do C `(void)frame`.
-    // Não toca em `frame` para evitar page-fault em handler de exceção.
+    // vazio; implementação depois
 }
 
 /// Ponto de entrada chamado pelo `boot/entry.asm`. Nome preservado.
