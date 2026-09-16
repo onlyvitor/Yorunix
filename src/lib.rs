@@ -8,11 +8,11 @@
 #![cfg_attr(not(test), no_main)]
 
 pub mod gdt;
+pub mod handler;
 pub mod idt;
 #[cfg(not(test))]
 pub mod support;
 pub mod vga;
-pub mod handler;
 
 use core::arch::asm;
 #[cfg(not(test))]
