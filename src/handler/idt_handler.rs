@@ -1,10 +1,18 @@
 use crate::idt::InterruptFrame;
+use core::arch::asm;
 use crate::vga;
 
-//#DE
-pub fn divide_error(_frame: &InterruptFrame) {
-    vga::putstr("Divisão por zero!\n");
+// #DE
+pub extern "C" fn divide_error(_frame: InterruptFrame) {
+    vga::putstr("Divisao por zero!\n");
+    
+    loop {
+        unsafe { 
+            asm!("hlt", options(nomem, nostack, preserves_flags)); 
+        }
+    }
 }
+
 
 //#DB
 pub fn debug(_frame: &InterruptFrame) {

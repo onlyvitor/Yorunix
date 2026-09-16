@@ -100,7 +100,7 @@ pub extern "C" fn i686_GDT_Initialize() {
     // descritor na stack (o `lgdt` copia limit+base para o GDTR, então o
     // temporário não precisa sobreviver). Chamado uma vez no boot com `cli`,
     // sem concorrência. A função ASM recarrega CS via far-ret e os segmentos
-    // de dados — comportamento idêntico ao `gdt.c` original.
+    // de dados.
     unsafe {
         let desc = GdtDescriptor {
             limit: (size_of::<[GdtEntry; 3]>() - 1) as u16,
