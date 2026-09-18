@@ -31,6 +31,31 @@ fn buffer() -> *mut ScreenCell {
     VGA_ADDR as *mut ScreenCell
 }
 
+/// Converte um `u32` em 8 dígitos hexadecimais ASCII (maiúsculos, MSB primeiro).
+///
+/// Função pura: não toca no MMIO, por isso é testável no host (`cargo test`).
+/// Sempre retorna zero-padded (ex.: `0x00F0000A` -> `b"00F0000A"`), para que
+/// dumps de `eip/cs/eflags` tenham largura fixa e sejam fáceis de comparar.
+/// Sem `core::fmt`/alloc — importante com `panic = "abort"` e `no_std`.
+fn hex_digits(v: u32) -> [u8; 8] {
+    // Tabela de conversão nibble (4 bits) -> ASCII. `b'A'` base garante
+    // maiúsculas, padrão de dumps de kernel (`0x1234ABCD`, não `0x1234abcd`).
+    let mut out = [b'0'; 8];
+    for i in 0..8 {
+        // Extrai o nibble `i` do mais significativo para o menos significativo:
+        // i=0 -> bits 28..31, i=7 -> bits 0..3.
+        let shift = 28 - (i as u32) * 4;
+        let nibble = ((v >> shift) & 0xF) as u8;
+        // 0..9 -> '0'..'9', 10..15 -> 'A'..'F'.
+        out[i] = if nibble < 10 {
+            b'0' + nibble
+        } else {
+            b'A' + (nibble - 10)
+        };
+    }
+    out
+}
+
 /// Limpa toda a tela para espaços em branco.
 pub fn clear_screen() {
     // SAFETY: 0xB8000 é o buffer VGA text-mode mapeado pelo hardware/BIOS em
@@ -88,5 +113,38 @@ pub fn putstr(s: &str) {
             );
             offset += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_digits_zero_is_padded() {
+        assert_eq!(hex_digits(0x0000_0000), *b"00000000");
+    }
+
+    #[test]
+    fn hex_digits_typical_address() {
+        // Endereço típico de `eip`: letras e números misturados.
+        assert_eq!(hex_digits(0x1234_ABCD), *b"1234ABCD");
+    }
+
+    #[test]
+    fn hex_digits_all_ones() {
+        assert_eq!(hex_digits(0xFFFF_FFFF), *b"FFFFFFFF");
+    }
+
+    #[test]
+    fn hex_digits_preserves_leading_zeros() {
+        // Padding é load-bearing: sem ele `0xA` e `0xA0000000` seriam ambíguos.
+        assert_eq!(hex_digits(0x00F0_000A), *b"00F0000A");
+    }
+
+    #[test]
+    fn hex_digits_uses_uppercase() {
+        // Garante `A..F` maiúsculos, não `a..f`.
+        assert_eq!(hex_digits(0x00AB_CDEF), *b"00ABCDEF");
     }
 }
