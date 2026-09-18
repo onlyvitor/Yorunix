@@ -32,9 +32,10 @@ fn panic(_info: &PanicInfo) -> ! {
 /// `->!` documents that it never returns (the `.hang` in ASM is just a fallback).
 #[no_mangle]
 pub extern "C" fn kernel_main() -> ! {
-    unsafe {
-        core::arch::asm!("mov eax, 1; xor edx, edx; mov ecx, 0; div ecx", out("eax") _, out("edx") _, out("ecx") _, options(nostack));
-    }
+    crate::kernel::drivers::vga::clear_screen();
+    crate::kernel::drivers::vga::putstr(
+        "Bem-vindo ao Yorunix!\ne magrao isso aqui ta funcionando!",
+    );
     loop {
         // SAFETY: `hlt` saves power until the next interrupt; the loop
         // guarantees we never return to the ASM caller.
