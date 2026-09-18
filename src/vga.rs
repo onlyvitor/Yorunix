@@ -41,13 +41,13 @@ fn hex_digits(v: u32) -> [u8; 8] {
     // Tabela de conversão nibble (4 bits) -> ASCII. `b'A'` base garante
     // maiúsculas, padrão de dumps de kernel (`0x1234ABCD`, não `0x1234abcd`).
     let mut out = [b'0'; 8];
-    for i in 0..8 {
+    for (i, slot) in out.iter_mut().enumerate() {
         // Extrai o nibble `i` do mais significativo para o menos significativo:
         // i=0 -> bits 28..31, i=7 -> bits 0..3.
         let shift = 28 - (i as u32) * 4;
         let nibble = ((v >> shift) & 0xF) as u8;
         // 0..9 -> '0'..'9', 10..15 -> 'A'..'F'.
-        out[i] = if nibble < 10 {
+        *slot = if nibble < 10 {
             b'0' + nibble
         } else {
             b'A' + (nibble - 10)
@@ -112,6 +112,49 @@ pub fn putstr(s: &str) {
                 },
             );
             offset += 1;
+        }
+    }
+}
+
+/// Escreve `v` como `0xXXXXXXXX` (10 células) na posição `(row, col)`.
+///
+/// Modelo posicional (2B): sem cursor global, sem efeito colateral no `putstr`.
+/// Ideal para dumps de exceção (`debug()` imprime `eip` na linha 1 sem apagar
+/// o cabeçalho da linha 0). Não faz wrap para a próxima linha: se `col + 10`
+/// ultrapassar `VGA_WIDTH`, trunca — evita que um dump corrompa o layout da
+/// tela. Posição fora da tela (`row >= 25` ou `col >= 80`) é no-op seguro.
+pub fn put_hex_at(v: u32, row: usize, col: usize) {
+    // SAFETY: mesmo dono/endereço de `clear_screen`/`putstr` (MMIO 0xB8000,
+    // único dono é o kernel). Cada escrita é `volatile` e precedida de
+    // bound-check, então nunca escrevemos fora das 2000 células. Leitura da
+    // cor atual via `read_volatile` segue o padrão do `putstr`.
+    unsafe {
+        // Rejeita origem inválida antes de tocar no hardware.
+        if row >= VGA_HEIGHT || col >= VGA_WIDTH {
+            return;
+        }
+        // Monta o texto `0x` + 8 dígitos em buffer local (sem alloc, sem fmt).
+        let digits = hex_digits(v);
+        let mut text = [b'0'; 10];
+        text[0] = b'0';
+        text[1] = b'x';
+        text[2..].copy_from_slice(&digits);
+
+        let buf = buffer();
+        let base = row * VGA_WIDTH + col;
+        // Largura restante nesta linha: garante truncamento sem wrap.
+        let room = VGA_WIDTH - col;
+        let len = if text.len() < room { text.len() } else { room };
+        for (i, &b) in text.iter().enumerate().take(len) {
+            let offset = base + i;
+            // Preserva a cor atual da célula, como no `putstr`.
+            let color = read_volatile(buf.add(offset)).color;
+            let color = if color == 0 {
+                COLOR_WHITE_ON_BLACK
+            } else {
+                color
+            };
+            write_volatile(buf.add(offset), ScreenCell { ascii: b, color });
         }
     }
 }
