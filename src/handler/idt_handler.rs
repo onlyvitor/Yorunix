@@ -3,7 +3,8 @@ use crate::vga;
 use core::arch::asm;
 // #DE
 pub extern "C" fn divide_error(_frame: &InterruptFrame) {
-    vga::putstr("Divisao por zero!\n");
+    vga::clear_screen();
+    vga::putstr("Divide by Zero!\n");
     loop {
         unsafe {
             asm!("cli", "hlt", options(nomem, nostack));
@@ -13,7 +14,8 @@ pub extern "C" fn divide_error(_frame: &InterruptFrame) {
 
 //#DB
 pub fn debug(_frame: &InterruptFrame) {
-    vga::putstr("InterruptFrame:\n");
+    vga::clear_screen();
+    vga::putstr("Debug Exception!");
 }
 
 //NMI
