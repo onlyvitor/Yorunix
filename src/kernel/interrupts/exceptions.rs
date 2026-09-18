@@ -1,24 +1,24 @@
 use crate::arch::x86::cpu::idt::InterruptFrame;
 use crate::kernel::drivers::vga;
 use core::arch::asm;
-// #DE — Divide Error, vector 0, fault, sem error code (ISR_NOERRCODE).
-// Dispara em `div`/`idiv` com divisor 0 ou quociente que não cabe no
-// registrador destino (ex.: `mov ax, 0xFFFF / mov bl, 0 / div bl`).
-// Fatal: `iret` retornaria ao mesmo `eip` e refaria a divisão em loop,
-// então imprime e TRAVA (`cli/hlt`) em vez de retornar. Nunca `ret` aqui.
+// #DE — Divide Error, vector 0, fault, no error code (ISR_NOERRCODE).
+// Triggered by `div`/`idiv` with a zero divisor or a quotient that does not fit
+// in the destination register (e.g. `mov ax, 0xFFFF / mov bl, 0 / div bl`).
+// Fatal: `iret` would return to the same `eip` and redo the division in a loop,
+// so print and HALT (`cli/hlt`) instead of returning. Never `ret` here.
 pub extern "C" fn divide_error(frame: &InterruptFrame) {
-    // Copia campos primeiro: `frame` aponta para o stack do ASM e o dump
-    // abaixo faz MMIO volátil; locais evitam releituras surpreendentes.
+    // Copy fields first: `frame` points to the ASM stack and the dump
+    // below performs volatile MMIO; locals avoid surprising re-reads.
     let eip = frame.eip;
     let cs = frame.cs;
     let eflags = frame.eflags;
 
-    // Layout posicional 2B (igual ao `debug`): `putstr` recomeça no offset 0,
-    // então rótulos em UMA chamada e valores via `put_hex_at`.
-    // Linha 0: título / Linha 1: "EIP=" / Linha 2: "CS=" / Linha 3: "EFLAGS=".
+    // 2B positional layout (same as `debug`): `putstr` restarts at offset 0,
+    // so labels in ONE call and values via `put_hex_at`.
+    // Row 0: title / Row 1: "EIP=" / Row 2: "CS=" / Row 3: "EFLAGS=".
     vga::clear_screen();
     vga::putstr("Divide Error (#DE)!\nEIP=\nCS=\nEFLAGS=\n");
-    // Col = len do rótulo: "EIP=" -> 4, "CS=" -> 3, "EFLAGS=" -> 7.
+    // Col = label len: "EIP=" -> 4, "CS=" -> 3, "EFLAGS=" -> 7.
     vga::put_hex_at(eip, 1, 4);
     vga::put_hex_at(cs, 2, 3);
     vga::put_hex_at(eflags, 3, 7);
@@ -29,22 +29,22 @@ pub extern "C" fn divide_error(frame: &InterruptFrame) {
     }
 }
 
-//#DB — vector 1, fault, sem error code (ISR_NOERRCODE).
-// Recoverable: imprime e RETORNA (iret resume). Nunca `cli/hlt` aqui,
-// senão single-step / hardware breakpoint trava o kernel.
+//#DB — vector 1, fault, no error code (ISR_NOERRCODE).
+// Recoverable: print and RETURN (iret resumes). Never `cli/hlt` here,
+// otherwise single-step / hardware breakpoint hangs the kernel.
 pub fn debug(frame: &InterruptFrame) {
-    // Copia campos primeiro: `frame` aponta para o stack do ASM e o dump
-    // abaixo faz MMIO volátil; locais evitam releituras surpreendentes.
+    // Copy fields first: `frame` points to the ASM stack and the dump
+    // below performs volatile MMIO; locals avoid surprising re-reads.
     let eip = frame.eip;
     let cs = frame.cs;
     let eflags = frame.eflags;
 
-    // Layout posicional 2B: `putstr` sempre recomeça no offset 0, então os
-    // rótulos vão em UMA chamada (com `\n`) e os valores via `put_hex_at`.
-    // Linha 0: título / Linha 1: "EIP=" / Linha 2: "CS=" / Linha 3: "EFLAGS=".
+    // 2B positional layout: `putstr` always restarts at offset 0, so
+    // labels go in ONE call (with `\n`) and values via `put_hex_at`.
+    // Row 0: title / Row 1: "EIP=" / Row 2: "CS=" / Row 3: "EFLAGS=".
     vga::clear_screen();
     vga::putstr("Debug Exception (#DB)!\nEIP=\nCS=\nEFLAGS=\n");
-    // Col = len do rótulo: "EIP=" -> 4, "CS=" -> 3, "EFLAGS=" -> 7.
+    // Col = label len: "EIP=" -> 4, "CS=" -> 3, "EFLAGS=" -> 7.
     vga::put_hex_at(eip, 1, 4);
     vga::put_hex_at(cs, 2, 3);
     vga::put_hex_at(eflags, 3, 7);
@@ -144,7 +144,7 @@ pub fn security_exception(_frame: &InterruptFrame) {
     vga::putstr("Security exception!\n");
 }
 
-// Reserved exceptions (32..255) — paridade com o C (no-op).
+// Reserved exceptions (32..255) — parity with C (no-op).
 pub fn reserved(_frame: &InterruptFrame) {
     vga::putstr("Reserved exception!\n");
 }

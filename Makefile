@@ -39,9 +39,9 @@ endif
 
 all: $(BUILD_DIR)/kernel.bin
 
-# Núcleo Rust como staticlib (no_std, panic=abort). Contém:
+# Rust core as a staticlib (no_std, panic=abort). Contains:
 # arch/ (gdt, idt) + kernel/ (vga, exceptions, support) + kernel_main + panic_handler.
-# Lista robusta: qualquer .rs novo em src/ provoca recompilação.
+# Robust list: any new .rs file in src/ triggers a rebuild.
 RUST_SRCS := $(shell find src -name '*.rs')
 $(RUST_LIB): Cargo.toml rust-toolchain.toml $(RUST_SRCS)
 	$(CARGO) build --target $(RUST_TARGET)

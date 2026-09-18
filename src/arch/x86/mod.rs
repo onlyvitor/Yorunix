@@ -1,3 +1,3 @@
-//! x86 32-bit (i686): tabelas de CPU e ABI com os stubs NASM.
+//! x86 32-bit (i686): CPU tables and ABI with the NASM stubs.
 
 pub mod cpu;

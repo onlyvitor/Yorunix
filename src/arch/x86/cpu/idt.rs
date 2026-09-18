@@ -1,12 +1,12 @@
 //! IDT — Interrupt Descriptor Table (32-bit).
 //!
-//! Substitui `arch/x86/idt.c` + `idt.h` preservando o contrato com `idt.asm`:
-//! - `i686_ISR_common` faz `pusha; mov ds/es/fs/gs,0x10; push esp; call
+//! Replaces `arch/x86/idt.c` + `idt.h` while preserving the contract with `idt.asm`:
+//! - `i686_ISR_common` does `pusha; mov ds/es/fs/gs,0x10; push esp; call
 //!   i686_ISR_handler; add esp,4; popa; add esp,8; iret`.
-//! - Por isso `InterruptFrame` replica exatamente essa ordem de empilhamento.
+//! - Hence `InterruptFrame` replicates exactly that push order.
 //!
-//! Corrige bug do C original: `base_high` era `uint8_t` (gate de 7 bytes,
-//! truncava 8 bits do handler). Aqui são 8 bytes com `base_high: u16`.
+//! Fixes a bug in the original C: `base_high` was `uint8_t` (a 7-byte gate,
+//! truncating 8 bits of the handler). Here it is 8 bytes with `base_high: u16`.
 
 use core::mem::size_of;
 
@@ -15,7 +15,7 @@ pub const RING0: u8 = 0x00;
 pub const TYPE_INTERRUPT_GATE: u8 = 0x0E;
 pub const SELECTOR_KERNEL_CODE: u16 = 0x08;
 
-/// Gate de interrupção 32-bit — 8 bytes exatos exigidos pela CPU.
+/// 32-bit interrupt gate — exact 8 bytes required by the CPU.
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct IdtEntry {
@@ -26,7 +26,7 @@ pub struct IdtEntry {
     base_high: u16,
 }
 
-/// Registrador IDTR (limit u16 + base u32).
+/// IDTR register (limit u16 + base u32).
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct IdtDescriptor {
@@ -34,10 +34,10 @@ pub struct IdtDescriptor {
     base: u32,
 }
 
-/// Deve espelhar `pusha` + `push int_num/error` + `eip/cs/eflags` da CPU.
+/// Must mirror `pusha` + `push int_num/error` + CPU `eip/cs/eflags`.
 ///
-/// Ordem do `pusha` no stack (ESP aponta para EDI após o `pusha`), depois
-/// `int_num`, `error_code`, depois o que a CPU empilhou.
+/// `pusha` order on the stack (ESP points to EDI after `pusha`), then
+/// `int_num`, `error_code`, then what the CPU pushed.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct InterruptFrame {
@@ -67,11 +67,11 @@ static mut IDT: [IdtEntry; 256] = [IdtEntry {
     base_high: 0,
 }; 256];
 
-// Stubs NASM — expandidos para 0..31 no `idt.asm` (ver fix ASM).
-// Cada símbolo é o endereço do handler de baixo nível.
-// No `cargo test` (host) os .o do NASM não participam do link, então stubs
-// no-op com os mesmos símbolos satisfazem o linker; `idt_init` nunca é
-// chamado nos testes.
+// NASM stubs — expanded to 0..31 in `idt.asm` (see ASM fix).
+// Each symbol is the address of the low-level handler.
+// Under `cargo test` (host) the NASM .o files do not take part in linking, so
+// no-op stubs with the same symbols satisfy the linker; `idt_init` is never
+// called in tests.
 #[cfg(not(test))]
 extern "C" {
     fn i686_ISR0();
@@ -112,7 +112,7 @@ extern "C" {
 macro_rules! define_test_isr_stubs {
     ($($name:ident),*) => {
         $(
-            // Nomes replicam os símbolos ASM de propósito.
+            // Names intentionally replicate the ASM symbols.
             #[allow(dead_code, non_snake_case)]
             unsafe extern "C" fn $name() {}
         )*
@@ -127,8 +127,8 @@ define_test_isr_stubs!(
     i686_ISR24, i686_ISR25, i686_ISR26, i686_ISR27, i686_ISR28, i686_ISR29, i686_ISR30, i686_ISR31
 );
 
-/// Construtor puro de gate — mesma codificação usada no boot, sem tocar na
-/// tabela global, para ser unitariamente testável no host.
+/// Pure gate constructor — same encoding used at boot, without touching the
+/// global table, so it is unit-testable on the host.
 const fn make_gate(base: u32, selector: u16, attr: u8) -> IdtEntry {
     IdtEntry {
         base_low: (base & 0xFFFF) as u16,
@@ -140,32 +140,32 @@ const fn make_gate(base: u32, selector: u16, attr: u8) -> IdtEntry {
 }
 
 fn set_gate(num: usize, base: u32, selector: u16, attr: u8) {
-    // SAFETY: chamador garante `num < 256`. Campos escritos uma única vez no
-    // boot com `cli`, antes de qualquer interrupção ser habilitada.
+    // SAFETY: caller guarantees `num < 256`. Fields written a single time at
+    // boot with `cli`, before any interrupt is enabled.
     unsafe {
         let entry = &mut *core::ptr::addr_of_mut!(IDT).cast::<[IdtEntry; 256]>();
         entry[num] = make_gate(base, selector, attr);
     }
 }
 
-/// Vetor do divide error (#DE). Constante evita magic number no dispatch.
+/// Divide error vector (#DE). Constant avoids a magic number in dispatch.
 pub const DIVIDE_VECTOR: u32 = 0;
 
-/// Vetor da exceção de debug (#DB). Mantido como constante para evitar
-/// magic number no dispatch e facilitar testes no host.
+/// Debug exception vector (#DB). Kept as a constant to avoid a
+/// magic number in dispatch and to ease testing on the host.
 pub const DEBUG_VECTOR: u32 = 1;
 
-/// Handler genérico chamado pelo stub ASM (`push esp; call i686_ISR_handler`).
-/// Despacha por `int_num`. Vetores 0 (#DE) e 1 (#DB) têm handler real;
-/// os demais seguem no-op para não mudar comportamento dos outros vetores.
+/// Generic handler called by the ASM stub (`push esp; call i686_ISR_handler`).
+/// Dispatches on `int_num`. Vectors 0 (#DE) and 1 (#DB) have a real handler;
+/// the rest remain no-op so as not to change the behavior of the other vectors.
 #[no_mangle]
-// Não pode ser `unsafe fn`: é chamado via `call` direto do stub NASM.
-// O lint é suprimido localmente; a segurança é justificada no bloco abaixo.
+// Cannot be an `unsafe fn`: it is called via a direct `call` from the NASM stub.
+// The lint is suppressed locally; safety is justified in the block below.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
-    // SAFETY: o stub ASM sempre passa `esp` (ponteiro válido do frame).
-    // Checagem de nulo por defesa: em QEMU/host-test um ponteiro nulo
-    // jamais deve derrubar o kernel dentro do handler.
+    // SAFETY: the ASM stub always passes `esp` (valid frame pointer).
+    // Defensive null check: under QEMU/host-test a null pointer
+    // must never bring down the kernel inside the handler.
     unsafe {
         if frame.is_null() {
             return;
@@ -179,13 +179,13 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
     }
 }
 
-/// Ponto de entrada chamado pelo `arch/x86/boot/entry.asm`. Nome preservado.
+/// Entry point called by `arch/x86/boot/entry.asm`. Name preserved.
 #[no_mangle]
 pub extern "C" fn idt_init() {
     const ATTR: u8 = PRESENT | RING0 | TYPE_INTERRUPT_GATE;
-    // SAFETY: `IDT` vive por todo o kernel; `lidt` copia limit+base para o
-    // IDTR. Endereços dos stubs vêm do linker (sempre válidos). Sem
-    // concorrência no boot (`cli` no `_start`).
+    // SAFETY: `IDT` lives for the whole kernel; `lidt` copies limit+base into
+    // the IDTR. Stub addresses come from the linker (always valid). No
+    // concurrency at boot (`cli` in `_start`).
     unsafe {
         let handlers: [unsafe extern "C" fn(); 32] = [
             i686_ISR0, i686_ISR1, i686_ISR2, i686_ISR3, i686_ISR4, i686_ISR5, i686_ISR6, i686_ISR7,
@@ -195,10 +195,10 @@ pub extern "C" fn idt_init() {
             i686_ISR29, i686_ISR30, i686_ISR31,
         ];
         for (i, h) in handlers.iter().enumerate() {
-            // No alvo real (i686) um `u32` cobre todo endereço — não há
-            // truncamento. O warning de truncamento só existe no host
-            // 64-bit (onde `idt_init` é compilado mas nunca chamado), e a
-            // variante sem truncamento dispara no i686.
+            // On the real target (i686) a `u32` covers every address — no
+            // truncation. The truncation warning only exists on the 64-bit
+            // host (where `idt_init` is compiled but never called), and the
+            // non-truncating variant fires on i686.
             #[allow(clippy::fn_to_numeric_cast, clippy::fn_to_numeric_cast_with_truncation)]
             let addr = *h as u32;
             set_gate(i, addr, SELECTOR_KERNEL_CODE, ATTR);
@@ -215,7 +215,7 @@ pub extern "C" fn idt_init() {
 mod tests {
     use super::*;
 
-    // Ver nota em crate::arch::x86::cpu::gdt::tests: campos packed são copiados, nunca referenciados.
+    // See note in crate::arch::x86::cpu::gdt::tests: packed fields are copied, never referenced.
     fn fields(g: IdtEntry) -> (u16, u16, u8, u8, u16) {
         (g.base_low, g.selector, g.zero, g.attr, g.base_high)
     }
@@ -238,19 +238,19 @@ mod tests {
 
     #[test]
     fn debug_vector_is_one() {
-        // #DB é o vetor 1 (Intel SDM Vol.3 Ch.6). Trava o contrato do dispatch.
+        // #DB is vector 1 (Intel SDM Vol.3 Ch.6). Locks the dispatch contract.
         assert_eq!(DEBUG_VECTOR, 1);
     }
 
     #[test]
     fn divide_vector_is_zero() {
-        // #DE é o vetor 0. Trava o contrato do dispatch.
+        // #DE is vector 0. Locks the dispatch contract.
         assert_eq!(DIVIDE_VECTOR, 0);
     }
 
     #[test]
     fn handler_ignores_null_frame() {
-        // Não deve travar nem tocar em MMIO com ponteiro nulo.
+        // Must not hang nor touch MMIO with a null pointer.
         i686_ISR_handler(core::ptr::null_mut());
     }
 }

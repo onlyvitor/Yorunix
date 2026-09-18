@@ -4,9 +4,9 @@ ENTRY(_start)
 SECTIONS {
     . = 1M;  /* Load kernel at 1MB (GRUB standard) */
 
-    /* Seção dedicada + KEEP: o header Multiboot precisa estar nos primeiros
-       8 KiB do binário para o GRUB reconhecer. Sem KEEP, --gc-sections pode
-       descartá-lo ou reordená-lo para depois do .text do Rust (quebra boot). */
+    /* Dedicated section + KEEP: the Multiboot header must be within the first
+       8 KiB of the binary for GRUB to recognize it. Without KEEP, --gc-sections may
+       discard it or reorder it after the Rust .text (breaking boot). */
     .multiboot : { KEEP(*(.multiboot)) }
     .text : { *(.text*) }
     .rodata : { *(.rodata*) }

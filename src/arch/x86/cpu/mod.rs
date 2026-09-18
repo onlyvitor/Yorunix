@@ -1,7 +1,7 @@
-//! Tabelas de CPU de baixo nível: GDT e IDT.
+//! Low-level CPU tables: GDT and IDT.
 //!
-//! Contém apenas estruturas, gates e inicialização — os handlers
-//! semânticos vivem em `crate::kernel::interrupts::exceptions`.
+//! Contains only structures, gates, and initialization — the semantic
+//! handlers live in `crate::kernel::interrupts::exceptions`.
 
 pub mod gdt;
 pub mod idt;

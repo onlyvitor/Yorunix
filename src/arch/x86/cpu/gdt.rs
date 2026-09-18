@@ -1,17 +1,17 @@
-//! GDT — Global Descriptor Table (32-bit, anel 0).
+//! GDT — Global Descriptor Table (32-bit, ring 0).
 //!
-//! Substitui `arch/x86/gdt.c` + `gdt.h` preservando ABI do `gdt.asm`:
-//! - Layout `#[repr(C, packed)]` idêntico ao C `__attribute__((packed))`.
-//! - Símbolo `i686_GDT_Initialize` com mesma assinatura `extern "C" fn()`.
-//! - Chama `i686_GDT_Load(desc, 0x08, 0x10)` implementado em NASM
-//!   (`lgdt` + far `retf` para recarregar CS + `mov ds/es/fs/gs/ss`).
+//! Replaces `arch/x86/gdt.c` + `gdt.h` while preserving the `gdt.asm` ABI:
+//! - `#[repr(C, packed)]` layout identical to C `__attribute__((packed))`.
+//! - `i686_GDT_Initialize` symbol with the same `extern "C" fn()` signature.
+//! - Calls `i686_GDT_Load(desc, 0x08, 0x10)` implemented in NASM
+//!   (`lgdt` + far `retf` to reload CS + `mov ds/es/fs/gs/ss`).
 
 use core::mem::size_of;
 
 pub const CODE_SEGMENT: u16 = 0x08;
 pub const DATA_SEGMENT: u16 = 0x10;
 
-// --- Access byte (mesmos valores do enum GDT_ACCESS em gdt.c) ---
+// --- Access byte (same values as the GDT_ACCESS enum in gdt.c) ---
 pub const ACCESS_PRESENT: u8 = 0x80;
 pub const ACCESS_RING0: u8 = 0x00;
 pub const ACCESS_CODE_SEGMENT: u8 = 0x18;
@@ -19,11 +19,11 @@ pub const ACCESS_DATA_SEGMENT: u8 = 0x10;
 pub const ACCESS_CODE_READABLE: u8 = 0x02;
 pub const ACCESS_DATA_WRITEABLE: u8 = 0x02;
 
-// --- Flags + nibble alto do limite (mesmos valores de GDT_FLAGS) ---
+// --- Flags + high limit nibble (same values as GDT_FLAGS) ---
 pub const FLAG_32BIT: u8 = 0x40;
 pub const FLAG_GRANULARITY_4K: u8 = 0x80;
 
-/// Entrada de 8 bytes da GDT. Deve permanecer `packed` para o `lgdt`.
+/// 8-byte GDT entry. Must remain `packed` for `lgdt`.
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct GdtEntry {
@@ -35,7 +35,7 @@ pub struct GdtEntry {
     base_high: u8,
 }
 
-/// Descritor GDTR de 6 bytes (limit u16 + base u32).
+/// 6-byte GDTR descriptor (limit u16 + base u32).
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct GdtDescriptor {
@@ -47,7 +47,7 @@ const _: () = assert!(size_of::<GdtEntry>() == 8);
 const _: () = assert!(size_of::<GdtDescriptor>() == 6);
 
 impl GdtEntry {
-    /// Equivalente `const` da macro `GDT_ENTRY(base, limit, access, flags)` do C.
+    /// `const` equivalent of the C `GDT_ENTRY(base, limit, access, flags)` macro.
     pub const fn new(base: u32, limit: u32, access: u8, flags: u8) -> Self {
         Self {
             limit_low: (limit & 0xFFFF) as u16,
@@ -60,10 +60,10 @@ impl GdtEntry {
     }
 }
 
-// Tabela viva enquanto o kernel executa — por isso `static mut` + acesso em
-// `init` com interrupções desabilitadas (o `_start` faz `cli` antes de chamar).
+// Table live while the kernel runs — hence `static mut` + access in
+// `init` with interrupts disabled (`_start` issues `cli` before calling).
 static mut GDT: [GdtEntry; 3] = [
-    // Descritor NULL
+    // NULL descriptor
     GdtEntry::new(0, 0, 0, 0),
     // Kernel code 32-bit: base 0, limit 0xFFFFF, 4K granularity (= 4GB)
     GdtEntry::new(
@@ -86,21 +86,21 @@ extern "C" {
     fn i686_GDT_Load(desc: *const GdtDescriptor, code: u16, data: u16);
 }
 
-/// Stub de teste: no host não há GDTR; só permite linkar e validar a chamada.
-// O nome replica o símbolo ASM de propósito.
+/// Test stub: there is no GDTR on the host; it only allows linking and validating the call.
+// The name intentionally replicates the ASM symbol.
 #[cfg(test)]
 #[allow(non_snake_case)]
 unsafe fn i686_GDT_Load(_desc: *const GdtDescriptor, _code: u16, _data: u16) {}
 
-/// Ponto de entrada chamado pelo `arch/x86/boot/entry.asm`.
-/// Mantém o nome/símbolo exato do C para não tocar o ASM.
+/// Entry point called by `arch/x86/boot/entry.asm`.
+/// Keeps the exact C name/symbol so the ASM stays untouched.
 #[no_mangle]
 pub extern "C" fn i686_GDT_Initialize() {
-    // SAFETY: `GDT` é estática e vive por todo o kernel; construímos o
-    // descritor na stack (o `lgdt` copia limit+base para o GDTR, então o
-    // temporário não precisa sobreviver). Chamado uma vez no boot com `cli`,
-    // sem concorrência. A função ASM recarrega CS via far-ret e os segmentos
-    // de dados.
+    // SAFETY: `GDT` is static and lives for the whole kernel; we build the
+    // descriptor on the stack (`lgdt` copies limit+base into the GDTR, so the
+    // temporary does not need to outlive the call). Called once at boot with `cli`,
+    // without concurrency. The ASM function reloads CS via far-ret and the data
+    // segments.
     unsafe {
         let desc = GdtDescriptor {
             limit: (size_of::<[GdtEntry; 3]>() - 1) as u16,
@@ -114,8 +114,8 @@ pub extern "C" fn i686_GDT_Initialize() {
 mod tests {
     use super::*;
 
-    // `assert_eq!` referencia os operandos, e campos de struct packed não
-    // admitem referência (E0793). Copiamos para locais antes de comparar.
+    // `assert_eq!` borrows its operands, and packed struct fields cannot
+    // be referenced (E0793). We copy them to locals before comparing.
     fn fields(e: GdtEntry) -> (u16, u16, u8, u8, u8, u8) {
         (
             e.limit_low,
@@ -140,7 +140,7 @@ mod tests {
             ACCESS_PRESENT | ACCESS_RING0 | ACCESS_CODE_SEGMENT | ACCESS_CODE_READABLE,
             FLAG_32BIT | FLAG_GRANULARITY_4K,
         );
-        // access = 0x80 | 0x18 | 0x02 = 0x9A; limite alto 0xF + flags 0xC0 = 0xCF.
+        // access = 0x80 | 0x18 | 0x02 = 0x9A; high limit 0xF + flags 0xC0 = 0xCF.
         assert_eq!(fields(e), (0xFFFF, 0, 0, 0x9A, 0xCF, 0));
     }
 

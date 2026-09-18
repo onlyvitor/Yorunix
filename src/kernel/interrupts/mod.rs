@@ -1,6 +1,6 @@
-//! Tratamento conceitual de interrupções/exceções.
+//! Conceptual handling of interrupts/exceptions.
 //!
-//! `exceptions` contém os handlers das exceções de CPU.
-//! Futuro: `irq.rs`, `dispatcher.rs` — não criar antes da necessidade.
+//! `exceptions` contains the CPU exception handlers.
+//! Future: `irq.rs`, `dispatcher.rs` — do not create before needed.
 
 pub mod exceptions;

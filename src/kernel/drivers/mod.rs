@@ -1,3 +1,3 @@
-//! Drivers do kernel (VGA hoje; serial/teclado no futuro).
+//! Kernel drivers (VGA today; serial/keyboard in the future).
 
 pub mod vga;

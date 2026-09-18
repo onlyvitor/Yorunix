@@ -1,8 +1,8 @@
-//! Lógica do kernel independente de arquitetura.
+//! Architecture-independent kernel logic.
 //!
-//! - `interrupts`: tratamento conceitual de exceções/IRQs.
-//! - `drivers`: hardware/drivers (VGA hoje, serial no futuro).
-//! - `support`: símbolos freestanding exigidos pelo linker.
+//! - `interrupts`: conceptual handling of exceptions/IRQs.
+//! - `drivers`: hardware/drivers (VGA today, serial in the future).
+//! - `support`: freestanding symbols required by the linker.
 
 pub mod drivers;
 pub mod interrupts;
