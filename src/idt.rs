@@ -148,12 +148,15 @@ fn set_gate(num: usize, base: u32, selector: u16, attr: u8) {
     }
 }
 
+/// Vetor do divide error (#DE). Constante evita magic number no dispatch.
+pub const DIVIDE_VECTOR: u32 = 0;
+
 /// Vetor da exceção de debug (#DB). Mantido como constante para evitar
 /// magic number no dispatch e facilitar testes no host.
 pub const DEBUG_VECTOR: u32 = 1;
 
 /// Handler genérico chamado pelo stub ASM (`push esp; call i686_ISR_handler`).
-/// Despacha por `int_num`. Por enquanto só o vetor 1 (#DB) tem handler real;
+/// Despacha por `int_num`. Vetores 0 (#DE) e 1 (#DB) têm handler real;
 /// os demais seguem no-op para não mudar comportamento dos outros vetores.
 #[no_mangle]
 // Não pode ser `unsafe fn`: é chamado via `call` direto do stub NASM.
@@ -168,7 +171,9 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
             return;
         }
         let f = &*frame;
-        if f.int_num == DEBUG_VECTOR {
+        if f.int_num == DIVIDE_VECTOR {
+            crate::handler::idt_handler::divide_error(f);
+        } else if f.int_num == DEBUG_VECTOR {
             crate::handler::idt_handler::debug(f);
         }
     }
@@ -235,6 +240,12 @@ mod tests {
     fn debug_vector_is_one() {
         // #DB é o vetor 1 (Intel SDM Vol.3 Ch.6). Trava o contrato do dispatch.
         assert_eq!(DEBUG_VECTOR, 1);
+    }
+
+    #[test]
+    fn divide_vector_is_zero() {
+        // #DE é o vetor 0. Trava o contrato do dispatch.
+        assert_eq!(DIVIDE_VECTOR, 0);
     }
 
     #[test]
