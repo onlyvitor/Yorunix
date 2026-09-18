@@ -2,7 +2,7 @@ use crate::idt::InterruptFrame;
 use crate::vga;
 use core::arch::asm;
 // #DE
-pub extern "C" fn divide_error(_frame: InterruptFrame) {
+pub extern "C" fn divide_error(_frame: &InterruptFrame) {
     vga::putstr("Divisao por zero!\n");
     loop {
         unsafe {
