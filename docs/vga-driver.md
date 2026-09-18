@@ -16,7 +16,7 @@ COLOR_WHITE_ON_BLACK = 0x0F  → white on black (src/vga.rs:16)
 
 `ScreenCell` (`src/vga.rs:18-23`) is `#[repr(C)]` over exactly those two bytes. The video card continuously reads this RAM and renders it to the display — writing to `0xB8000` *is* the display update. This is **memory-mapped I/O**: ordinary memory addresses that are actually a window into hardware.
 
-### The two operations
+### The operations
 
 - **`clear_screen`** (`src/vga.rs:60-72`) — writes the same blank cell (`b' '`, `0x0F`) to all 80×25 = 2000 cells with `write_volatile`.
 - **`putstr`** (`src/vga.rs:78-117`) — walks the string byte by byte from the top-left:
@@ -24,6 +24,10 @@ COLOR_WHITE_ON_BLACK = 0x0F  → white on black (src/vga.rs:16)
   - writes stop at the screen boundary (`offset >= total → break`) — no overruns past cell 1999
   - each cell's **existing color is read first** (`read_volatile`) and preserved, falling back to `0x0F` if it's zero — a hook for future colored output
   - NUL bytes are rendered as spaces instead of garbage glyphs
+- **`hex_digits`** (`src/vga.rs:40-57`) — pure `u32` → 8 uppercase hex ASCII digits, zero-padded, no MMIO / `fmt` / alloc, so it runs in `cargo test` on the host.
+- **`put_hex_at`** (`src/vga.rs:126-160`) — positional `0xXXXXXXXX` (10 cells) writer at `(row, col)` with no global cursor and no side effect on `putstr`:
+  - `base = row * VGA_WIDTH + col`, truncates if `col + 10` exceeds the line — never wraps
+  - out-of-screen origin (`row >= 25` or `col >= 80`) is a safe no-op, ideal for exception dumps without erasing other rows
 
 Scrolling is intentionally **not implemented yet** — parity with the original C driver's visible behavior was the goal; a scrolling cursor is on the roadmap.
 
