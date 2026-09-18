@@ -12,10 +12,25 @@ pub extern "C" fn divide_error(_frame: &InterruptFrame) {
     }
 }
 
-//#DB
-pub fn debug(_frame: &InterruptFrame) {
+//#DB — vector 1, fault, sem error code (ISR_NOERRCODE).
+// Recoverable: imprime e RETORNA (iret resume). Nunca `cli/hlt` aqui,
+// senão single-step / hardware breakpoint trava o kernel.
+pub fn debug(frame: &InterruptFrame) {
+    // Copia campos primeiro: `frame` aponta para o stack do ASM e o dump
+    // abaixo faz MMIO volátil; locais evitam releituras surpreendentes.
+    let eip = frame.eip;
+    let cs = frame.cs;
+    let eflags = frame.eflags;
+
+    // Layout posicional 2B: `putstr` sempre recomeça no offset 0, então os
+    // rótulos vão em UMA chamada (com `\n`) e os valores via `put_hex_at`.
+    // Linha 0: título / Linha 1: "EIP=" / Linha 2: "CS=" / Linha 3: "EFLAGS=".
     vga::clear_screen();
-    vga::putstr("Debug Exception!");
+    vga::putstr("Debug Exception (#DB)!\nEIP=\nCS=\nEFLAGS=\n");
+    // Col = len do rótulo: "EIP=" -> 4, "CS=" -> 3, "EFLAGS=" -> 7.
+    vga::put_hex_at(eip, 1, 4);
+    vga::put_hex_at(cs, 2, 3);
+    vga::put_hex_at(eflags, 3, 7);
 }
 
 //NMI
