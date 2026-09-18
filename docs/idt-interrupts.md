@@ -104,7 +104,7 @@ A single 3-byte instruction; no NASM round-trip needed. `make_gate` is a `const 
 
 Vectors 2–31 still fall through to no-op, preserving prior behavior until each gets its handler.
 
-Both dumps share one screen layout (positional model, no global cursor — see [VGA driver](vga-driver.md)): one `putstr` prints the labels (`Title\nEIP=\nCS=\nEFLAGS=` on rows 0–3), then `put_hex_at(v, row, col)` (`src/kernel/drivers/vga.rs:126`) writes each `0xXXXXXXXX` value at the end of its label (`(1,4)`, `(2,3)`, `(3,7)`). Fields are copied to locals before the volatile MMIO writes.
+Both dumps share one screen layout (positional model, no global cursor — see [VGA driver](vga-driver.md)): one `putstr` prints the labels (`Title\nEIP=\nCS=\nEFLAGS=` on rows 0–3), then `put_hex_at(v, row, col)` (`src/kernel/drivers/vga.rs:147`) writes each `0xXXXXXXXX` value at the end of its label (`(1,4)`, `(2,3)`, `(3,7)`). Fields are copied to locals before the volatile MMIO writes. Hex text is built by the pure `format_hex` helper (`vga.rs:66-78`), which — like `support.rs` — uses only `while` byte loops so LLVM never emits a `memcpy` call on the exception path.
 
 FFI note: the handler keeps its `extern "C"` ABI for the NASM `call`, so Clippy's `not_unsafe_ptr_arg_deref` is suppressed locally with a `SAFETY` justification instead of marking it `unsafe fn`.
 

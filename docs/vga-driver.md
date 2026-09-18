@@ -18,14 +18,15 @@ COLOR_WHITE_ON_BLACK = 0x0F  → white on black (src/kernel/drivers/vga.rs:16)
 
 ### The operations
 
-- **`clear_screen`** (`src/kernel/drivers/vga.rs:60-72`) — writes the same blank cell (`b' '`, `0x0F`) to all 80×25 = 2000 cells with `write_volatile`.
-- **`putstr`** (`src/kernel/drivers/vga.rs:78-117`) — walks the string byte by byte from the top-left:
+- **`clear_screen`** (`src/kernel/drivers/vga.rs:81-93`) — writes the same blank cell (`b' '`, `0x0F`) to all 80×25 = 2000 cells with `write_volatile`.
+- **`putstr`** (`src/kernel/drivers/vga.rs:99-138`) — walks the string byte by byte from the top-left:
   - `\n` jumps to the start of the next row (`offset = (row + 1) * VGA_WIDTH`)
   - writes stop at the screen boundary (`offset >= total → break`) — no overruns past cell 1999
   - each cell's **existing color is read first** (`read_volatile`) and preserved, falling back to `0x0F` if it's zero — a hook for future colored output
   - NUL bytes are rendered as spaces instead of garbage glyphs
 - **`hex_digits`** (`src/kernel/drivers/vga.rs:40-57`) — pure `u32` → 8 uppercase hex ASCII digits, zero-padded, no MMIO / `fmt` / alloc, so it runs in `cargo test` on the host.
-- **`put_hex_at`** (`src/kernel/drivers/vga.rs:126-160`) — positional `0xXXXXXXXX` (10 cells) writer at `(row, col)` with no global cursor and no side effect on `putstr`:
+- **`format_hex`** (`src/kernel/drivers/vga.rs:66-78`) — pure `u32` → `0xXXXXXXXX` (10 bytes: `0x` prefix + 8 digits), same purity contract as `hex_digits`, pinned by host tests.
+- **`put_hex_at`** (`src/kernel/drivers/vga.rs:147-181`) — positional writer of the `format_hex` output at `(row, col)` with no global cursor and no side effect on `putstr`:
   - `base = row * VGA_WIDTH + col`, truncates if `col + 10` exceeds the line — never wraps
   - out-of-screen origin (`row >= 25` or `col >= 80`) is a safe no-op, ideal for exception dumps without erasing other rows
 
@@ -35,7 +36,17 @@ Scrolling is intentionally **not implemented yet** — parity with the original 
 
 From the optimizer's perspective, `clear_screen` is a loop that writes the same address range 2000 times where nobody ever reads the values. A compiler is allowed to collapse or elide such stores entirely — for *normal* memory that's a legal optimization, for MMIO it deletes your driver. **Volatile accesses are observable**: the compiler must perform them, in order, exactly as written.
 
-That's why every framebuffer touch is `write_volatile` / `read_volatile` (`src/kernel/drivers/vga.rs:69, 101, 107, 151, 157`), and why the SAFETY comment on each `unsafe` block (`src/kernel/drivers/vga.rs:61-64, 79-81, 127-130`) documents the ownership argument: after boot, the kernel is the sole owner of the VGA buffer, and every access is bounds-checked against `0xB8000 + 2000` cells.
+That's why every framebuffer touch is `write_volatile` / `read_volatile` (`src/kernel/drivers/vga.rs:90, 122, 128, 171, 177`), and why the SAFETY comment on each `unsafe` block (`src/kernel/drivers/vga.rs:82-84, 100-102, 148-151`) documents the ownership argument: after boot, the kernel is the sole owner of the VGA buffer, and every access is bounds-checked against `0xB8000 + 2000` cells.
+
+### Freestanding constraint — no helpers that lower to `memcpy`
+
+The kernel links with plain `ld` and no compiler-rt, so `src/kernel/support.rs` *is* the `memcpy`/`memmove`/`memset` provider. Any driver code that makes LLVM emit a call to one of those symbols while *providing* them recurses: `put_hex_at` once built its text with `copy_from_slice`, which lowered to `memcpy`, while `memcpy` itself was implemented with `copy_from_slice` — labels printed, hex never arrived. The rule, enforced in this driver:
+
+- text formatting lives in pure helpers (`hex_digits`, `format_hex`) using only `while` byte loops — no `copy_from_slice`, no iterator adapters;
+- the MMIO writer (`put_hex_at`) copies with an index `while` loop;
+- `support.rs` implements the C helpers with raw-pointer byte loops only — never slice helpers, `ptr::copy`, or `ptr::write_bytes`, which can lower back into the same symbols.
+
+`objdump -d build/kernel.bin` is the check: no `call memcpy`/`memmove` in the `put_hex_at`/`format_hex` range.
 
 ## Why we did this — bugs inherited from the C original
 
@@ -43,9 +54,9 @@ The module docstring (`src/kernel/drivers/vga.rs:1-7`) records what the C versio
 
 | C bug | Symptom | Rust fix |
 |---|---|---|
-| `clear_screen` wrote `0x00` (NUL) and iterated `i < 80*25` with **step 2** | Screen only half cleared; NULs render as garbage glyphs | Blank cell is `b' '`, loop covers all 2000 cells (`vga.rs:60-72`) |
+| `clear_screen` wrote `0x00` (NUL) and iterated `i < 80*25` with **step 2** | Screen only half cleared; NULs render as garbage glyphs | Blank cell is `b' '`, loop covers all 2000 cells (`vga.rs:81-93`) |
 | No `volatile` on MMIO stores | Compiler permitted to eliminate "dead" stores — driver could vanish under optimization | `write_volatile`/`read_volatile` everywhere |
-| `putstr` had no `\n`, wrap, or bounds handling | Bytes written past the visible screen into adjacent memory | Full line handling + bound checks (`vga.rs:78-117`) |
+| `putstr` had no `\n`, wrap, or bounds handling | Bytes written past the visible screen into adjacent memory | Full line handling + bound checks (`vga.rs:99-138`) |
 
 (Full migration log in [rust-for-osdev.md](rust-for-osdev.md#migration-log-bugs-found-in-the-c-original).)
 

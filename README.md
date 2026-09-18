@@ -206,7 +206,7 @@ The transition from BIOS 16-bit real mode to 32-bit protected mode is performed 
 ## Kernel Components
 
 ### VGA text mode (src/kernel/drivers/vga.rs)
-Safe wrapper over the memory-mapped text buffer at `0xB8000` (80x25 cells, white-on-black). Uses `write_volatile`/`read_volatile` so MMIO writes are never optimized away. `clear_screen` fills all 2000 cells with spaces; `putstr` handles `\n`, line wrap and screen-bounds truncation.
+Safe wrapper over the memory-mapped text buffer at `0xB8000` (80x25 cells, white-on-black). Uses `write_volatile`/`read_volatile` so MMIO writes are never optimized away. `clear_screen` fills all 2000 cells with spaces; `putstr` handles `\n`, line wrap and screen-bounds truncation; `put_hex_at` writes positional `0xXXXXXXXX` values via the pure, host-tested `format_hex` helper. Driver and `support.rs` alike use only `while` byte loops — never helpers that lower to `memcpy`/`memmove`/`memset` (see `docs/vga-driver.md`).
 
 ### GDT (src/arch/x86/cpu/gdt.rs)
 Three descriptors: NULL, kernel code (`0x08`) and kernel data (`0x10`), both ring 0, 32-bit, 4 KiB granularity (full 4 GB flat model). Entries are `#[repr(C, packed)]` with compile-time size assertions, keeping ABI compatibility with the NASM loader.
@@ -215,7 +215,7 @@ Three descriptors: NULL, kernel code (`0x08`) and kernel data (`0x10`), both rin
 A 256-entry Interrupt Descriptor Table with the first 32 gates (CPU exceptions) wired to NASM stubs (`i686_ISR0`..`i686_ISR31`). Stubs push an interrupt number (plus a dummy 0 when the CPU doesn't push an error code), then trampoline into the common handler, which saves all registers (`pusha`), reloads data segments and calls the Rust `i686_ISR_handler` with an `InterruptFrame`. Vectors 0 (`#DE`) and 1 (`#DB`) dispatch to handlers in `kernel/interrupts/exceptions.rs` with an `EIP/CS/EFLAGS` VGA dump; the remaining vectors are still no-op placeholders.
 
 ### Freestanding support (src/kernel/support.rs)
-Bare-metal linking without libc requires `memcpy`, `memmove`, `memset`, `memcmp`, `bcmp` and `rust_eh_personality`; this module provides minimal byte-wise implementations.
+Bare-metal linking without libc requires `memcpy`, `memmove`, `memset`, `memcmp`, `bcmp` and `rust_eh_personality`; this module provides minimal implementations with raw-pointer byte loops only — slice helpers and `ptr` intrinsics are banned here because they can lower back into the same symbols.
 
 ### Panic behavior
 In the kernel (`panic = "abort"`, `no_std`), a panic enters a safe `hlt` loop - there is nothing to unwind into.

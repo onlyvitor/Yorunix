@@ -45,7 +45,7 @@ Rust needs a target spec to emit code; `i686-unknown-linux-gnu` gives 32-bit cod
 
 A normal Rust build lets `rustc` (which invokes a C compiler driver) drive the link. That would pull in `crt0`, `libc` and a `main` — none of which exist here. YoRunix links with bare `ld` instead, which has a **price the compiler forces us to pay**: LLVM emits references to C memory functions for anything non-trivial (struct copies → `memcpy`/`memmove`, `write_bytes` → `memset`, slice comparison → `memcmp`/`bcmp`), and the `core` crate references `rust_eh_personality` for its unwind tables even under `panic = "abort"`.
 
-Nobody provides those symbols in a freestanding link — so we do, byte-wise and libc-free, in `src/kernel/support.rs:14-63`. This is not optional: without that file the link fails with undefined references (or worse, succeeds with the wrong semantic if a host libc sneaks in).
+Nobody provides those symbols in a freestanding link — so we do, with raw-pointer byte loops and no libc, in `src/kernel/support.rs:19-117`. This is not optional: without that file the link fails with undefined references (or worse, succeeds with the wrong semantic if a host libc sneaks in). The implementations must never use slice helpers, `ptr::copy`, or `ptr::write_bytes` — those can lower back into the very `memcpy`/`memmove`/`memset` calls they implement (see [VGA driver](vga-driver.md#freestanding-constraint--no-helpers-that-lower-to-memcpy)).
 
 ### Panic strategy (`Cargo.toml:12-17`)
 

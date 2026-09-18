@@ -23,8 +23,8 @@ Dropping `std` means rebuilding its floor. In a hosted program `std` silently pr
 |---|---|
 | `main` / C runtime | We don't — ASM owns `_start`, Rust exports `extern "C"` fns (`src/lib.rs:36-44`) |
 | Panic handler | `src/lib.rs:24-32` — a `hlt` loop |
-| `memcpy`/`memmove`/`memset`/`memcmp`/`bcmp` | `src/kernel/support.rs:17-63` — byte-wise, no libc |
-| `rust_eh_personality` (unwind glue in `core`) | `src/kernel/support.rs:14-15` — unreachable no-op under `panic=abort` |
+| `memcpy`/`memmove`/`memset`/`memcmp`/`bcmp` | `src/kernel/support.rs:29-117` — raw-pointer byte loops, no libc |
+| `rust_eh_personality` (unwind glue in `core`) | `src/kernel/support.rs:19` — unreachable no-op under `panic=abort` |
 
 `no_main` is the flip side: Rust generates no entry point at all. `arch/x86/boot/entry.asm` owns `_start`; Rust only publishes `kernel_main`, `i686_GDT_Initialize`, and `idt_init` for it to call. The kernel is a **library the boot stub links against** (see [build-system.md](build-system.md)).
 
@@ -44,7 +44,7 @@ Rust's honest proposition for OS dev: **the unsafe surface shrinks from "the who
 
 In the C kernel, *every* line could corrupt memory. In the Rust kernel, `unsafe` appears only where hardware demands it:
 
-- two raw MMIO loops in the VGA driver (`vga.rs:40-46, 57-90`)
+- the VGA driver's MMIO loops (`clear_screen`, `putstr`, `put_hex_at` — `vga.rs:81-181`)
 - the GDTR/IDTR descriptor construction and the `lgdt`/`lidt` loads (`gdt.rs:104-110`, `idt.rs:168-185`)
 - the `static mut` table accesses above
 
@@ -73,7 +73,7 @@ C kernels lean on macros for table construction; Rust has real constant evaluati
 fn panic(_info: &PanicInfo) -> ! { loop { hlt } }
 ```
 
-(`src/lib.rs:24-32`) With `panic = "abort"` and no one to catch anything, a panic is a controlled halt: `hlt` keeps the CPU quiet and QEMU's window shows a frozen screen — *the kernel state at the crash preserved*. No unwinding machinery exists to pull in code paths, which is also why `support.rs` needs only an empty `rust_eh_personality` (`support.rs:10-15`).
+(`src/lib.rs:24-32`) With `panic = "abort"` and no one to catch anything, a panic is a controlled halt: `hlt` keeps the CPU quiet and QEMU's window shows a frozen screen — *the kernel state at the crash preserved*. No unwinding machinery exists to pull in code paths, which is also why `support.rs` needs only an empty `rust_eh_personality` (`support.rs:19`).
 
 ## Testing without hardware
 
@@ -83,7 +83,7 @@ The test build flips `std` back on (`cfg_attr(not(test), ...)` — `lib.rs:7-8`)
 - `i686_ISR0..31` get macro-generated no-op stubs (`idt.rs:111-130`)
 - the NASM objects simply don't link in test builds
 
-What's tested: GDT entry encoding (including the `0x9A/0xCF` / `0x92/0xCF` flat-model values and base/limit field splitting), IDT gate encoding (`0x8E`, address split), null-entry zeroing. What isn't: anything touching real registers — that's what `make run` in QEMU is for.
+What's tested: GDT entry encoding (including the `0x9A/0xCF` / `0x92/0xCF` flat-model values and base/limit field splitting), IDT gate encoding (`0x8E`, address split), null-entry zeroing, VGA hex formatting (`hex_digits`, `format_hex` — including the `0x` prefix and zero-padding). What isn't: anything touching real registers — that's what `make run` in QEMU is for.
 
 One subtlety worth keeping: dev/release use `panic = "abort"`, but cargo **forces unwind in the test profile** (explicit `panic` settings there are ignored) because the libtest harness needs unwinding to *report* a failed assert — with abort, one failing test would abort the runner instead of logging a failure. That's why host tests work unchanged.
 
@@ -100,14 +100,18 @@ The most persuasive argument for the migration is that the C code carried real, 
 
 | # | Bug in the C original | Symptom | Rust fix |
 |---|---|---|---|
-| 1 | `clear_screen` wrote `0x00` (NUL) and iterated `i < 80*25` with step 2 | Half the screen "cleared" with garbage glyphs | Blank cell `b' '`, full 2000-cell loop (`vga.rs:35-47`) |
-| 2 | `putstr` ignored `\n`, wrap, and screen bounds | Writes past the visible screen into adjacent memory | Newline handling, wrap, bound checks (`vga.rs:53-91`) |
+| 1 | `clear_screen` wrote `0x00` (NUL) and iterated `i < 80*25` with step 2 | Half the screen "cleared" with garbage glyphs | Blank cell `b' '`, full 2000-cell loop (`vga.rs:81-93`) |
+| 2 | `putstr` ignored `\n`, wrap, and screen bounds | Writes past the visible screen into adjacent memory | Newline handling, wrap, bound checks (`vga.rs:99-138`) |
 | 3 | MMIO stores without `volatile` | Optimizer legally allowed to elide "dead" stores | `write_volatile`/`read_volatile` on every access |
 | 4 | IDT `base_high` was `uint8_t` → the gate struct was 7 bytes | Handler's top 8 address bits truncated and every gate after the first landed misaligned — corrupted dispatch | `base_high: u16`, 8-byte gate + `const` size assert (`idt.rs:26, 59`) |
 | 5 | Multiboot header unprotected from `--gc-sections` | Header dropped or reordered after `.text` → GRUB: no multiboot header | Dedicated `.multiboot` section + `KEEP` in `link.ld:8-10` |
 | 6 | Freestanding link lacked `memcpy`/`memset`/… | Undefined references when linking without a C driver | `support.rs` byte-wise libc-free implementations |
 
 Notice the pattern: bugs 1–3 are *discipline* bugs C cannot see, bug 4 is a *layout* bug that compile-time size assertions would have caught instantly, bugs 5–6 are *toolchain* interactions that needed explicit ownership. The Rust migration didn't just translate the C — it made each failure mode structurally harder to reintroduce (bounds-checked writes, `const` asserts, `volatile` in the type system, tested encoding functions).
+
+### Post-migration bug: freestanding self-recursion (found while testing `#DE`)
+
+Not inherited from C — introduced after the migration, and worth recording because the toolchain gave no warning. `put_hex_at` built its `0xXXXXXXXX` text with `copy_from_slice`, which LLVM lowered to a `memcpy` call — while `memcpy` itself was implemented with `copy_from_slice`. Same pattern in `memmove` (`ptr::copy`) and `memset` (`ptr::write_bytes`). Symptom: exception labels printed, hex values never arrived. Fix: pure `format_hex` helper plus `while` byte loops in the driver, and raw-pointer byte loops in `support.rs` — never slice helpers or `ptr` intrinsics that can lower back into the same symbols. Verified with `objdump -d build/kernel.bin` (no `call memcpy`/`memmove` in the hex path) and a QEMU `-d int` run showing exactly one `v=00` with no double fault. See [VGA driver](vga-driver.md#freestanding-constraint--no-helpers-that-lower-to-memcpy).
 
 ### The migration strategy (worth copying)
 
