@@ -6,9 +6,22 @@ use core::arch::asm;
 // registrador destino (ex.: `mov ax, 0xFFFF / mov bl, 0 / div bl`).
 // Fatal: `iret` retornaria ao mesmo `eip` e refaria a divisão em loop,
 // então imprime e TRAVA (`cli/hlt`) em vez de retornar. Nunca `ret` aqui.
-pub extern "C" fn divide_error(_frame: &InterruptFrame) {
+pub extern "C" fn divide_error(frame: &InterruptFrame) {
+    // Copia campos primeiro: `frame` aponta para o stack do ASM e o dump
+    // abaixo faz MMIO volátil; locais evitam releituras surpreendentes.
+    let eip = frame.eip;
+    let cs = frame.cs;
+    let eflags = frame.eflags;
+
+    // Layout posicional 2B (igual ao `debug`): `putstr` recomeça no offset 0,
+    // então rótulos em UMA chamada e valores via `put_hex_at`.
+    // Linha 0: título / Linha 1: "EIP=" / Linha 2: "CS=" / Linha 3: "EFLAGS=".
     vga::clear_screen();
-    vga::putstr("Divide by Zero!\n");
+    vga::putstr("Divide Error (#DE)!\nEIP=\nCS=\nEFLAGS=\n");
+    // Col = len do rótulo: "EIP=" -> 4, "CS=" -> 3, "EFLAGS=" -> 7.
+    vga::put_hex_at(eip, 1, 4);
+    vga::put_hex_at(cs, 2, 3);
+    vga::put_hex_at(eflags, 3, 7);
     loop {
         unsafe {
             asm!("cli", "hlt", options(nomem, nostack));
