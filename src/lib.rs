@@ -37,7 +37,7 @@ fn panic(_info: &PanicInfo) -> ! {
 #[no_mangle]
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
-    vga::putstr("Bem-vindo ao Yorunix!");
+    vga::putstr("Bem-vindo ao Yorunix!\ne magrao isso aqui ta funcionando!");
     loop {
         // SAFETY: `hlt` economiza energia até a próxima interrupção; o loop
         // garante que nunca retornamos ao chamador ASM.
