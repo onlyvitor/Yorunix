@@ -1,6 +1,6 @@
 # IDT — exceptions and interrupt stubs
 
-**Source:** `src/idt.rs`, `arch/x86/idt.asm`
+**Source:** `src/idt.rs`, `src/handler/idt_handler.rs`, `src/vga.rs`, `arch/x86/idt.asm`
 
 ## How it works
 
@@ -12,7 +12,7 @@ The GDT answers *"which segments exist"*; the IDT answers *"what code runs when 
 - **32–47**: hardware IRQs (timer, keyboard…) — after PIC remapping *(future work)*
 - **48–255**: software interrupts / syscalls
 
-YoRunix currently wires the **first 32** — the exception gates — into `static mut IDT: [IdtEntry; 256]` (`src/idt.rs:62-68`) and loads the table with `lidt` (`src/idt.rs:184`).
+YoRunix currently wires the **first 32** — the exception gates — into `static mut IDT: [IdtEntry; 256]` (`src/idt.rs:62-68`) and loads the table with `lidt` (`src/idt.rs:210`).
 
 ### Anatomy of a gate (`src/idt.rs:19-27`)
 
@@ -26,7 +26,7 @@ YoRunix currently wires the **first 32** — the exception gates — into `stati
 
 Note the **`u16` on `base_high`**: this exact field is where the C original had a bug — see the migration log in [rust-for-osdev.md](rust-for-osdev.md). A gate must be **exactly 8 bytes**; the CPU reads entries at `IDT_base + 8*N` with no search or tolerance.
 
-`attr = PRESENT | RING0 | TYPE_INTERRUPT_GATE` = `0x80 | 0x00 | 0x0E` = **`0x8E`** (`src/idt.rs:13-16, 164`). "Interrupt gate" means the CPU clears IF on entry (nested exceptions still possible via NMIs) — the standard choice for kernel exception handlers.
+`attr = PRESENT | RING0 | TYPE_INTERRUPT_GATE` = `0x80 | 0x00 | 0x0E` = **`0x8E`** (`src/idt.rs:13-16, 185`). "Interrupt gate" means the CPU clears IF on entry (nested exceptions still possible via NMIs) — the standard choice for kernel exception handlers.
 
 ### Which vectors push an error code
 
@@ -74,7 +74,7 @@ i686_ISR_common:
     mov ax, 0x10               ; reload data segments to kernel data
     mov ds/es/fs/gs, ax
     push esp                   ; argument: pointer to the frame (cdecl)
-    call i686_ISR_handler      ; → Rust (src/idt.rs:156)
+    call i686_ISR_handler      ; → Rust (src/idt.rs:165)
     add esp, 4                 ; drop the argument
     popa                       ; restore registers
     add esp, 8                 ; drop int_num + error_code
@@ -83,7 +83,7 @@ i686_ISR_common:
 
 `iret` pops `eip`, `cs`, `eflags` — and the error code is consumed by it, which is why the cleanup `add esp, 8` only removes the two stub-pushed dwords.
 
-### Registration (`src/idt.rs:162-186`)
+### Registration (`src/idt.rs:184-212`)
 
 `idt_init` — the symbol `_start` calls — fills gates 0..31 with `make_gate(handler as u32, 0x08, 0x8E)` via the `set_gate` helper, then executes `lidt` through inline assembly:
 
@@ -91,11 +91,22 @@ i686_ISR_common:
 core::arch::asm!("lidt [{}]", in(reg) &desc, options(nostack, preserves_flags));
 ```
 
-A single 3-byte instruction; no NASM round-trip needed. `make_gate` is a `const fn` that never touches the global table — encoding is pure and host-testable (`src/idt.rs:197-211`).
+A single 3-byte instruction; no NASM round-trip needed. `make_gate` is a `const fn` that never touches the global table — encoding is pure and host-testable (`src/idt.rs:225-236`).
 
-### The handler is deliberately a no-op
+### Dispatch: vectors 0–1 are live (`src/idt.rs:151-180`)
 
-`i686_ISR_handler` currently does nothing with the frame (`src/idt.rs:155-159`), mirroring the C original's `(void)frame`. That's phase-one bring-up: before adding logic, the machinery must provably not crash — a fault occurring inside an exception handler is the worst class of bug to debug. Per-vector dispatch (print, panic with details, or ignore) is the next step on the [roadmap](../README.md#development-roadmap).
+`i686_ISR_handler` is no longer a no-op. It null-guards the ASM-passed `*mut InterruptFrame`, then dispatches on `int_num` via named constants (`DIVIDE_VECTOR = 0`, `DEBUG_VECTOR = 1`), both pinned by host tests:
+
+| Vector | Handler (`src/handler/idt_handler.rs`) | Class | Behavior |
+|---|---|---|---|
+| 0 `#DE` | `divide_error:9` | Fatal fault, no error code | Dumps `EIP/CS/EFLAGS`, then `cli/hlt` loops forever — `iret` would re-execute the same faulting `div` |
+| 1 `#DB` | `debug:35` | Recoverable fault, no error code | Dumps `EIP/CS/EFLAGS`, then **returns** so `iret` resumes (single-step / hw breakpoint) |
+
+Vectors 2–31 still fall through to no-op, preserving prior behavior until each gets its handler.
+
+Both dumps share one screen layout (positional model, no global cursor — see [VGA driver](vga-driver.md)): one `putstr` prints the labels (`Title\nEIP=\nCS=\nEFLAGS=` on rows 0–3), then `put_hex_at(v, row, col)` (`src/vga.rs:126`) writes each `0xXXXXXXXX` value at the end of its label (`(1,4)`, `(2,3)`, `(3,7)`). Fields are copied to locals before the volatile MMIO writes.
+
+FFI note: the handler keeps its `extern "C"` ABI for the NASM `call`, so Clippy's `not_unsafe_ptr_arg_deref` is suppressed locally with a `SAFETY` justification instead of marking it `unsafe fn`.
 
 ## Why we did this
 
@@ -108,7 +119,7 @@ A single 3-byte instruction; no NASM round-trip needed. `make_gate` is a `const 
 Exceptions are **how the CPU talks to the operating system**: a page fault, a divide-by-zero, a GP fault — all arrive through this exact pipeline. Every driver interrupt and every syscall entry will reuse the machinery built here. The two universal lessons:
 
 1. **Frame discipline.** Interrupt code is stack bookkeeping; one wrong `push`/`pop` and `iret` returns to a corrupted context. The `InterruptFrame` struct *is* the specification of that bookkeeping.
-2. **Bring-up ordering.** An IDT full of no-op handlers is still progress — it converts "triple fault, QEMU restarts" into "exception happened, we're alive". Observable failure beats silent failure.
+2. **Bring-up ordering.** Vectors 0–1 print diagnostics while 2–31 stay no-op — it converts "triple fault, QEMU restarts" into "exception happened, we're alive". Observable failure beats silent failure.
 
 ## Going deeper
 
