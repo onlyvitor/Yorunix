@@ -3,10 +3,14 @@
 //! When linking the `staticlib` with plain `ld` (without the `rustc`/`gcc` driver),
 //! nobody provides `memcpy/memset/memcmp` or `rust_eh_personality` — the
 //! LLVM backend emits them for copy loops, `slice`s, and unwind tables.
-//! Byte-by-byte implementations, with no libc dependency.
+//!
+//! Byte-by-byte implementations with raw pointer accesses only. They must
+//! never use slice helpers (`copy_from_slice`), `ptr::copy` or
+//! `ptr::write_bytes`: those intrinsics can lower back to a `memcpy` /
+//! `memmove` / `memset` call, recursing into these very symbols when there
+//! is no compiler-rt to satisfy them.
 
 use core::ffi::c_void;
-use core::slice::{from_raw_parts, from_raw_parts_mut};
 
 /// `rust_eh_personality` is referenced by the `core` unwind tables
 /// even with `panic = "abort"`. Since we never unwind (every panic halts
@@ -23,11 +27,13 @@ pub extern "C" fn rust_eh_personality() {}
 /// use `memmove`.
 #[no_mangle]
 pub unsafe extern "C" fn memcpy(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void {
-    // SAFETY: standard C contract documented above. Byte-by-byte copy without
-    // aggressive optimizations.
-    let d = from_raw_parts_mut(dest.cast::<u8>(), n);
-    let s = from_raw_parts(src.cast::<u8>(), n);
-    d.copy_from_slice(s);
+    // SAFETY: standard C contract documented above. Plain byte loop on raw
+    // pointers — no slice/intrinsic that could emit a `memcpy` call.
+    let mut i = 0;
+    while i < n {
+        *dest.cast::<u8>().add(i) = *src.cast::<u8>().add(i);
+        i += 1;
+    }
     dest
 }
 
@@ -40,10 +46,23 @@ pub unsafe extern "C" fn memcpy(dest: *mut c_void, src: *const c_void, n: usize)
 /// allowed.
 #[no_mangle]
 pub unsafe extern "C" fn memmove(dest: *mut c_void, src: *const c_void, n: usize) -> *mut c_void {
-    // SAFETY: same contract as `memcpy`, but allows overlap (copy
-    // via the logical temporary buffer of `copy`, which handles overlap).
-    unsafe {
-        core::ptr::copy(src.cast::<u8>(), dest.cast::<u8>(), n);
+    // SAFETY: same contract as `memcpy`, but allows overlap. Copy direction
+    // is chosen by address order; raw byte accesses only, so the backend
+    // cannot turn this into a `memmove` call.
+    let d = dest.cast::<u8>();
+    let s = src.cast::<u8>();
+    if (d as usize) < (s as usize) {
+        let mut i = 0;
+        while i < n {
+            *d.add(i) = *s.add(i);
+            i += 1;
+        }
+    } else {
+        let mut i = n;
+        while i > 0 {
+            i -= 1;
+            *d.add(i) = *s.add(i);
+        }
     }
     dest
 }
@@ -55,9 +74,12 @@ pub unsafe extern "C" fn memmove(dest: *mut c_void, src: *const c_void, n: usize
 /// Caller guarantees that `s` points to a writable `n`-byte region.
 #[no_mangle]
 pub unsafe extern "C" fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void {
-    // SAFETY: caller guarantees `n` writable bytes at `s`.
-    unsafe {
-        core::ptr::write_bytes(s.cast::<u8>(), c as u8, n);
+    // SAFETY: caller guarantees `n` writable bytes at `s`. Raw byte loop so
+    // the backend cannot turn this into a `memset` call.
+    let mut i = 0;
+    while i < n {
+        *s.cast::<u8>().add(i) = c as u8;
+        i += 1;
     }
     s
 }
@@ -70,12 +92,15 @@ pub unsafe extern "C" fn memset(s: *mut c_void, c: i32, n: usize) -> *mut c_void
 #[no_mangle]
 pub unsafe extern "C" fn memcmp(s1: *const c_void, s2: *const c_void, n: usize) -> i32 {
     // SAFETY: caller guarantees `n` readable bytes at both pointers.
-    let a = from_raw_parts(s1.cast::<u8>(), n);
-    let b = from_raw_parts(s2.cast::<u8>(), n);
-    for i in 0..n {
-        if a[i] != b[i] {
-            return a[i] as i32 - b[i] as i32;
+    // Raw byte loop; no slice indexing that could pull in helpers.
+    let mut i = 0;
+    while i < n {
+        let a = *s1.cast::<u8>().add(i);
+        let b = *s2.cast::<u8>().add(i);
+        if a != b {
+            return a as i32 - b as i32;
         }
+        i += 1;
     }
     0
 }
