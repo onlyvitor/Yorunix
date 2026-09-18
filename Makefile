@@ -9,20 +9,20 @@ RUST_TARGET := i686-unknown-linux-gnu
 RUST_PROFILE_DIR := debug
 RUST_LIB = target/$(RUST_TARGET)/$(RUST_PROFILE_DIR)/libyorunix.a
 
-ENTRY_POINT = boot/entry.asm
+ENTRY_POINT = arch/x86/boot/entry.asm
 ENTRY_OBJ = $(BUILD_DIR)/entry.o
 
-GDT_ASM_SRC = arch/x86/gdt.asm
+GDT_ASM_SRC = arch/x86/asm/gdt.asm
 GDT_ASM_OBJ = $(BUILD_DIR)/gdt_asm.o
 
-IDT_ASM_SRC = arch/x86/idt.asm
+IDT_ASM_SRC = arch/x86/asm/idt.asm
 IDT_ASM_OBJ = $(BUILD_DIR)/idt_asm.o
 
 LINKER_SCRIPT = link.ld
 
 # ISO / GRUB
 ISO_DIR = iso
-GRUB_CFG = boot/grub/grub.cfg
+GRUB_CFG = boot/grub.cfg
 
 LINKER_FLAGS = -z noexecstack --gc-sections
 ASFLAGS =
@@ -40,8 +40,10 @@ endif
 all: $(BUILD_DIR)/kernel.bin
 
 # Núcleo Rust como staticlib (no_std, panic=abort). Contém:
-# vga.rs + gdt.rs + idt.rs + kernel_main + panic_handler.
-$(RUST_LIB): Cargo.toml rust-toolchain.toml src/lib.rs src/vga.rs src/gdt.rs src/idt.rs src/support.rs
+# arch/ (gdt, idt) + kernel/ (vga, exceptions, support) + kernel_main + panic_handler.
+# Lista robusta: qualquer .rs novo em src/ provoca recompilação.
+RUST_SRCS := $(shell find src -name '*.rs')
+$(RUST_LIB): Cargo.toml rust-toolchain.toml $(RUST_SRCS)
 	$(CARGO) build --target $(RUST_TARGET)
 
 $(BUILD_DIR)/kernel.bin: $(ENTRY_OBJ) $(GDT_ASM_OBJ) $(IDT_ASM_OBJ) $(RUST_LIB)
