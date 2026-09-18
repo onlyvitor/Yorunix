@@ -1,6 +1,6 @@
 # Boot flow — from power-on to `kernel_main`
 
-**Source:** `boot/entry.asm`, `link.ld`, `boot/grub/grub.cfg`
+**Source:** `arch/x86/boot/entry.asm`, `link.ld`, `boot/grub.cfg`
 
 ## How it works
 
@@ -15,7 +15,7 @@
    │  switches the CPU to 32-bit protected mode
    │  loads the kernel at 1 MiB and jumps to _start
    ▼
- _start (boot/entry.asm)
+ _start (arch/x86/boot/entry.asm)
    │  cli → set up 16 KB stack → i686_GDT_Initialize → idt_init
    ▼
  kernel_main (src/lib.rs)
@@ -24,7 +24,7 @@
 
 The transition from BIOS real mode to protected mode is **GRUB's job**, not ours. YoRunix deliberately starts life in 32-bit protected mode with a flat memory view.
 
-### The Multiboot header (`boot/entry.asm:1-9`)
+### The Multiboot header (`arch/x86/boot/entry.asm:1-9`)
 
 ```asm
 section .multiboot
@@ -58,7 +58,7 @@ Two decisions here:
 1. **Load at 1 MiB.** Convention dating back to the IBM PC: addresses below 1 MiB are littered with legacy BIOS structures (IVT, VGA buffers, BIOS data area). Above 1 MiB is clean territory.
 2. **`KEEP(*(.multiboot))` in a dedicated output section.** The Makefile links with `--gc-sections` (`Makefile:27`) — garbage collection for unused input sections. Without a dedicated output section + `KEEP`, the linker is free to drop the header (it's pure data, nothing references it) or shuffle it after the Rust `.text` — both break booting: the spec requires the magic within the **first 8 KiB of the image**. GRUB would report `no multiboot header found`. This is a real bug class, not a theoretical one — the C-era linker script hit it.
 
-### What `_start` does (`boot/entry.asm:24-33`)
+### What `_start` does (`arch/x86/boot/entry.asm:24-33`)
 
 ```asm
 _start:
@@ -73,7 +73,7 @@ _start:
 ```
 
 - **`cli` first.** Until an IDT exists, any interrupt (timer tick, NMI aside) would vector into garbage and triple-fault the CPU. Interrupts stay off for the entire boot sequence in the current stage.
-- **16 KB stack, 16-byte aligned** (`boot/entry.asm:11-16`). The x86 ABI assumes stack alignment for SSE instructions (`movaps` faults on a misaligned access), and 16 KB is comfortable room for a kernel that will grow.
+- **16 KB stack, 16-byte aligned** (`arch/x86/boot/entry.asm:11-16`). The x86 ABI assumes stack alignment for SSE instructions (`movaps` faults on a misaligned access), and 16 KB is comfortable room for a kernel that will grow.
 - **`hlt` loop as fallback.** `kernel_main` is typed `-> !` (never returns) in Rust, so the `.hang` label is defense in depth: if control ever did return, the CPU parks instead of executing whatever follows.
 
 ### Two ways to boot it
@@ -81,7 +81,7 @@ _start:
 | Command | Loader | Notes |
 |---|---|---|
 | `make run` | QEMU's **built-in Multiboot loader** | No GRUB involved; `-kernel build/kernel.bin` (`Makefile:67-68`). Fast inner loop for development. |
-| `make iso` + `make run-grub` | **GRUB** from a CD image | `grub-mkrescue` packages `kernel.bin` + `boot/grub/grub.cfg` (`multiboot /boot/kernel.bin`) into `build/kernel.iso`. Closer to real hardware. |
+| `make iso` + `make run-grub` | **GRUB** from a CD image | `grub-mkrescue` packages `kernel.bin` + `boot/grub.cfg` (`multiboot /boot/kernel.bin`) into `build/kernel.iso`. Closer to real hardware. |
 
 Same kernel image, two loaders — a consequence of Multiboot compliance that pays for itself during development.
 

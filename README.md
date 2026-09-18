@@ -29,23 +29,32 @@ In-depth design docs live in [`docs/`](docs/README.md), each explaining *how it 
 yorunix/
 ├── arch/
 │   └── x86/
-│       ├── gdt.asm         # i686_GDT_Load: lgdt + segment reload (far retf)
-│       └── idt.asm         # ISR stubs 0..31 + common handler trampoline
+│       ├── boot/
+│       │   └── entry.asm       # Multiboot header, stack setup and _start entry point
+│       ├── asm/
+│       │   ├── gdt.asm         # i686_GDT_Load: lgdt + segment reload (far retf)
+│       │   └── idt.asm         # ISR stubs 0..31 + common handler trampoline
+│       └── cpu/                # (Rust, em src/arch/x86/cpu) IdtEntry/IdtDescriptor/InterruptFrame
 ├── boot/
-│   ├── entry.asm           # Multiboot header, stack setup and _start entry point
-│   └── grub/
-│       └── grub.cfg        # GRUB menu configuration for the bootable ISO
-├── src/                    # Kernel core in Rust (no_std)
-│   ├── lib.rs              # Crate root: kernel_main + panic handler (hlt loop)
-│   ├── vga.rs              # VGA text-mode driver (80x25, MMIO 0xB8000)
-│   ├── gdt.rs              # GDT construction (null, kernel code, kernel data)
-│   ├── idt.rs              # IDT construction + 256-gate table, exception gates
-│   └── support.rs          # Freestanding memcpy/memset/memcmp/bcmp + eh personality
-├── Cargo.toml              # Rust package (staticlib, panic = abort)
-├── rust-toolchain.toml     # Stable toolchain pinned to i686-unknown-linux-gnu
-├── Makefile                # Build configuration
-├── link.ld                 # Linker script (loads kernel at 1 MiB)
-└── LICENSE                 # BSD 3-Clause
+│   └── grub.cfg                # GRUB menu configuration for the bootable ISO
+├── src/                        # Kernel core in Rust (no_std, staticlib)
+│   ├── lib.rs                  # Crate root: kernel_main + panic handler (hlt loop)
+│   ├── arch/
+│   │   └── x86/
+│   │       └── cpu/
+│   │           ├── gdt.rs      # GDT construction (null, kernel code, kernel data)
+│   │           └── idt.rs      # IDT gates + InterruptFrame + i686_ISR_handler dispatch
+│   └── kernel/
+│       ├── interrupts/
+│       │   └── exceptions.rs   # Handlers semânticos (divide_error, debug, ...)
+│       ├── drivers/
+│       │   └── vga.rs          # VGA text-mode driver (80x25, MMIO 0xB8000)
+│       └── support.rs          # Freestanding memcpy/memset/memcmp/bcmp + eh personality
+├── Cargo.toml                  # Rust package (staticlib, panic = abort)
+├── rust-toolchain.toml         # Stable toolchain pinned to i686-unknown-linux-gnu
+├── Makefile                    # Build configuration
+├── link.ld                     # Linker script (loads kernel at 1 MiB)
+└── LICENSE                     # BSD 3-Clause
 ```
 
 ## Requirements
@@ -129,7 +138,7 @@ make
 
 This will:
 1. Compile the Rust kernel core with `cargo build --target i686-unknown-linux-gnu` into a `staticlib` (`libyorunix.a`)
-2. Assemble `boot/entry.asm`, `arch/x86/gdt.asm` and `arch/x86/idt.asm` using NASM (32-bit ELF format)
+2. Assemble `arch/x86/boot/entry.asm`, `arch/x86/asm/gdt.asm` and `arch/x86/asm/idt.asm` using NASM (32-bit ELF format)
 3. Link everything with `ld -m elf_i386 -T link.ld` into `build/kernel.bin`
 
 ### Build Output
@@ -158,7 +167,7 @@ make run
 Or boot through a real GRUB flow by building an ISO (requires `grub-mkrescue` and `xorriso`):
 
 ```bash
-make iso         # creates build/kernel.iso with boot/grub/grub.cfg
+make iso         # creates build/kernel.iso with boot/grub.cfg
 make run-grub    # boots the ISO with QEMU (-cdrom, GRUB menu)
 ```
 
@@ -182,7 +191,7 @@ The pipeline runs on GitHub Actions (`.github/workflows/`):
 
 Recommended repository setting: enable branch protection on `main` and require the **Lint and test** and **Build kernel and boot smoke test** checks before merging.
 
-## Boot Flow (boot/entry.asm)
+## Boot Flow (arch/x86/boot/entry.asm)
 
 The entry stub is **Multiboot-compliant**, allowing GRUB (or QEMU's `-kernel`) to boot the kernel. On boot:
 
@@ -196,16 +205,16 @@ The transition from BIOS 16-bit real mode to 32-bit protected mode is performed 
 
 ## Kernel Components
 
-### VGA text mode (src/vga.rs)
+### VGA text mode (src/kernel/drivers/vga.rs)
 Safe wrapper over the memory-mapped text buffer at `0xB8000` (80x25 cells, white-on-black). Uses `write_volatile`/`read_volatile` so MMIO writes are never optimized away. `clear_screen` fills all 2000 cells with spaces; `putstr` handles `\n`, line wrap and screen-bounds truncation.
 
-### GDT (src/gdt.rs)
+### GDT (src/arch/x86/cpu/gdt.rs)
 Three descriptors: NULL, kernel code (`0x08`) and kernel data (`0x10`), both ring 0, 32-bit, 4 KiB granularity (full 4 GB flat model). Entries are `#[repr(C, packed)]` with compile-time size assertions, keeping ABI compatibility with the NASM loader.
 
-### IDT (src/idt.rs)
-A 256-entry Interrupt Descriptor Table with the first 32 gates (CPU exceptions) wired to NASM stubs (`i686_ISR0`..`i686_ISR31`). Stubs push an interrupt number (plus a dummy 0 when the CPU doesn't push an error code), then trampoline into the common handler, which saves all registers (`pusha`), reloads data segments and calls the Rust `i686_ISR_handler` with an `InterruptFrame`. The handler is currently a no-op placeholder.
+### IDT (src/arch/x86/cpu/idt.rs)
+A 256-entry Interrupt Descriptor Table with the first 32 gates (CPU exceptions) wired to NASM stubs (`i686_ISR0`..`i686_ISR31`). Stubs push an interrupt number (plus a dummy 0 when the CPU doesn't push an error code), then trampoline into the common handler, which saves all registers (`pusha`), reloads data segments and calls the Rust `i686_ISR_handler` with an `InterruptFrame`. Vectors 0 (`#DE`) and 1 (`#DB`) dispatch to handlers in `kernel/interrupts/exceptions.rs` with an `EIP/CS/EFLAGS` VGA dump; the remaining vectors are still no-op placeholders.
 
-### Freestanding support (src/support.rs)
+### Freestanding support (src/kernel/support.rs)
 Bare-metal linking without libc requires `memcpy`, `memmove`, `memset`, `memcmp`, `bcmp` and `rust_eh_personality`; this module provides minimal byte-wise implementations.
 
 ### Panic behavior
@@ -217,7 +226,7 @@ YoRunix follows microkernel design principles:
 
 ### Core Kernel Responsibilities (current/planned)
 - Boot and CPU tables: GDT, IDT, exception stubs *(done)*
-- Interrupt/exception handling *(stubs in place, dispatch pending)*
+- Interrupt/exception handling *(vectors 0–1 dispatch live, rest pending)*
 - Memory management (basic paging)
 - Process/thread scheduling
 - Inter-process communication (IPC)
@@ -237,7 +246,8 @@ This separation allows the kernel to remain small while delegating complex funct
 - [x] GDT (Global Descriptor Table) setup
 - [x] IDT (Interrupt Descriptor Table) + exception stubs
 - [x] VGA text-mode output driver
-- [ ] Interrupt dispatch in Rust (`i686_ISR_handler` per-vector handling)
+- [x] Partial interrupt dispatch in Rust (vectors 0–1 live, rest no-op)
+- [ ] Full per-vector dispatch (`i686_ISR_handler` for all 32 vectors)
 - [ ] IRQs: PIC remapping, timer and keyboard drivers
 - [ ] Memory management (paging)
 - [ ] Basic process management

@@ -23,10 +23,10 @@ Dropping `std` means rebuilding its floor. In a hosted program `std` silently pr
 |---|---|
 | `main` / C runtime | We don't — ASM owns `_start`, Rust exports `extern "C"` fns (`src/lib.rs:36-44`) |
 | Panic handler | `src/lib.rs:24-32` — a `hlt` loop |
-| `memcpy`/`memmove`/`memset`/`memcmp`/`bcmp` | `src/support.rs:17-63` — byte-wise, no libc |
-| `rust_eh_personality` (unwind glue in `core`) | `src/support.rs:14-15` — unreachable no-op under `panic=abort` |
+| `memcpy`/`memmove`/`memset`/`memcmp`/`bcmp` | `src/kernel/support.rs:17-63` — byte-wise, no libc |
+| `rust_eh_personality` (unwind glue in `core`) | `src/kernel/support.rs:14-15` — unreachable no-op under `panic=abort` |
 
-`no_main` is the flip side: Rust generates no entry point at all. `boot/entry.asm` owns `_start`; Rust only publishes `kernel_main`, `i686_GDT_Initialize`, and `idt_init` for it to call. The kernel is a **library the boot stub links against** (see [build-system.md](build-system.md)).
+`no_main` is the flip side: Rust generates no entry point at all. `arch/x86/boot/entry.asm` owns `_start`; Rust only publishes `kernel_main`, `i686_GDT_Initialize`, and `idt_init` for it to call. The kernel is a **library the boot stub links against** (see [build-system.md](build-system.md)).
 
 ## Ownership without a GC
 
@@ -36,7 +36,7 @@ Rust's core rule — every value has exactly one owner, borrows can't outlive it
 - **No data races**: shared mutable state across contexts must go through synchronization the compiler can see. There's no threading yet, but the language is already shaped for when there is.
 - **No silent aliasing bugs**: the code can't hold two mutable handles to the same table by accident.
 
-The remaining escape hatches are explicit. The GDT and IDT tables are `static mut` (`src/gdt.rs:65`, `src/idt.rs:62`) — a deliberate, documented exception (`SAFETY` comments at `gdt.rs:63-64, 99-103` and `idt.rs:145-147, 165-167`): hardware-required globals, initialized once at boot under `cli`, no concurrency yet. Rust doesn't forbid this; it makes the risk **a reviewed, marked decision** instead of the default.
+The remaining escape hatches are explicit. The GDT and IDT tables are `static mut` (`src/arch/x86/cpu/gdt.rs:65`, `src/arch/x86/cpu/idt.rs:62`) — a deliberate, documented exception (`SAFETY` comments at `gdt.rs:63-64, 99-103` and `idt.rs:145-147, 165-167`): hardware-required globals, initialized once at boot under `cli`, no concurrency yet. Rust doesn't forbid this; it makes the risk **a reviewed, marked decision** instead of the default.
 
 ## `unsafe` as a door, not a room
 

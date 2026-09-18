@@ -1,6 +1,6 @@
 # IDT — exceptions and interrupt stubs
 
-**Source:** `src/idt.rs`, `src/handler/idt_handler.rs`, `src/vga.rs`, `arch/x86/idt.asm`
+**Source:** `src/arch/x86/cpu/idt.rs`, `src/kernel/interrupts/exceptions.rs`, `src/kernel/drivers/vga.rs`, `arch/x86/asm/idt.asm`
 
 ## How it works
 
@@ -12,9 +12,9 @@ The GDT answers *"which segments exist"*; the IDT answers *"what code runs when 
 - **32–47**: hardware IRQs (timer, keyboard…) — after PIC remapping *(future work)*
 - **48–255**: software interrupts / syscalls
 
-YoRunix currently wires the **first 32** — the exception gates — into `static mut IDT: [IdtEntry; 256]` (`src/idt.rs:62-68`) and loads the table with `lidt` (`src/idt.rs:210`).
+YoRunix currently wires the **first 32** — the exception gates — into `static mut IDT: [IdtEntry; 256]` (`src/arch/x86/cpu/idt.rs:62-68`) and loads the table with `lidt` (`src/arch/x86/cpu/idt.rs:210`).
 
-### Anatomy of a gate (`src/idt.rs:19-27`)
+### Anatomy of a gate (`src/arch/x86/cpu/idt.rs:19-27`)
 
 | Field | Size | Contents |
 |---|---|---|
@@ -26,11 +26,11 @@ YoRunix currently wires the **first 32** — the exception gates — into `stati
 
 Note the **`u16` on `base_high`**: this exact field is where the C original had a bug — see the migration log in [rust-for-osdev.md](rust-for-osdev.md). A gate must be **exactly 8 bytes**; the CPU reads entries at `IDT_base + 8*N` with no search or tolerance.
 
-`attr = PRESENT | RING0 | TYPE_INTERRUPT_GATE` = `0x80 | 0x00 | 0x0E` = **`0x8E`** (`src/idt.rs:13-16, 185`). "Interrupt gate" means the CPU clears IF on entry (nested exceptions still possible via NMIs) — the standard choice for kernel exception handlers.
+`attr = PRESENT | RING0 | TYPE_INTERRUPT_GATE` = `0x80 | 0x00 | 0x0E` = **`0x8E`** (`src/arch/x86/cpu/idt.rs:13-16, 185`). "Interrupt gate" means the CPU clears IF on entry (nested exceptions still possible via NMIs) — the standard choice for kernel exception handlers.
 
 ### Which vectors push an error code
 
-On some exceptions the CPU pushes an extra **error code** dword (vectors 8, 10–14, 17; vector 30 on newer CPUs). The NASM side handles this with two macros (`arch/x86/idt.asm:9-24`):
+On some exceptions the CPU pushes an extra **error code** dword (vectors 8, 10–14, 17; vector 30 on newer CPUs). The NASM side handles this with two macros (`arch/x86/asm/idt.asm:9-24`):
 
 ```asm
 ISR_NOERRCODE %1:   push byte 0     ; dummy — keep the frame layout uniform
@@ -42,7 +42,7 @@ Pushing a dummy for error-code vectors (or *not* pushing one for no-error vector
 
 ### The interrupt stack frame
 
-Everything combined, in the exact order the `InterruptFrame` struct mirrors (`src/idt.rs:41-57`):
+Everything combined, in the exact order the `InterruptFrame` struct mirrors (`src/arch/x86/cpu/idt.rs:41-57`):
 
 ```
 higher addresses
@@ -64,9 +64,9 @@ higher addresses
 lower addresses
 ```
 
-The struct is `#[repr(C)]` and is **the contract between two languages**: if NASM's push order or the CPU's push order changes, this struct must change with it — otherwise the handler reads registers as other registers. (See the module docstring `src/idt.rs:1-9`.)
+The struct is `#[repr(C)]` and is **the contract between two languages**: if NASM's push order or the CPU's push order changes, this struct must change with it — otherwise the handler reads registers as other registers. (See the module docstring `src/arch/x86/cpu/idt.rs:1-9`.)
 
-### The common handler trampoline (`arch/x86/idt.asm:59-75`)
+### The common handler trampoline (`arch/x86/asm/idt.asm:59-75`)
 
 ```asm
 i686_ISR_common:
@@ -74,7 +74,7 @@ i686_ISR_common:
     mov ax, 0x10               ; reload data segments to kernel data
     mov ds/es/fs/gs, ax
     push esp                   ; argument: pointer to the frame (cdecl)
-    call i686_ISR_handler      ; → Rust (src/idt.rs:165)
+    call i686_ISR_handler      ; → Rust (src/arch/x86/cpu/idt.rs:165)
     add esp, 4                 ; drop the argument
     popa                       ; restore registers
     add esp, 8                 ; drop int_num + error_code
@@ -83,7 +83,7 @@ i686_ISR_common:
 
 `iret` pops `eip`, `cs`, `eflags` — and the error code is consumed by it, which is why the cleanup `add esp, 8` only removes the two stub-pushed dwords.
 
-### Registration (`src/idt.rs:184-212`)
+### Registration (`src/arch/x86/cpu/idt.rs:184-212`)
 
 `idt_init` — the symbol `_start` calls — fills gates 0..31 with `make_gate(handler as u32, 0x08, 0x8E)` via the `set_gate` helper, then executes `lidt` through inline assembly:
 
@@ -91,20 +91,20 @@ i686_ISR_common:
 core::arch::asm!("lidt [{}]", in(reg) &desc, options(nostack, preserves_flags));
 ```
 
-A single 3-byte instruction; no NASM round-trip needed. `make_gate` is a `const fn` that never touches the global table — encoding is pure and host-testable (`src/idt.rs:225-236`).
+A single 3-byte instruction; no NASM round-trip needed. `make_gate` is a `const fn` that never touches the global table — encoding is pure and host-testable (`src/arch/x86/cpu/idt.rs:225-236`).
 
-### Dispatch: vectors 0–1 are live (`src/idt.rs:151-180`)
+### Dispatch: vectors 0–1 are live (`src/arch/x86/cpu/idt.rs:151-180`)
 
 `i686_ISR_handler` is no longer a no-op. It null-guards the ASM-passed `*mut InterruptFrame`, then dispatches on `int_num` via named constants (`DIVIDE_VECTOR = 0`, `DEBUG_VECTOR = 1`), both pinned by host tests:
 
-| Vector | Handler (`src/handler/idt_handler.rs`) | Class | Behavior |
+| Vector | Handler (`src/kernel/interrupts/exceptions.rs`) | Class | Behavior |
 |---|---|---|---|
 | 0 `#DE` | `divide_error:9` | Fatal fault, no error code | Dumps `EIP/CS/EFLAGS`, then `cli/hlt` loops forever — `iret` would re-execute the same faulting `div` |
 | 1 `#DB` | `debug:35` | Recoverable fault, no error code | Dumps `EIP/CS/EFLAGS`, then **returns** so `iret` resumes (single-step / hw breakpoint) |
 
 Vectors 2–31 still fall through to no-op, preserving prior behavior until each gets its handler.
 
-Both dumps share one screen layout (positional model, no global cursor — see [VGA driver](vga-driver.md)): one `putstr` prints the labels (`Title\nEIP=\nCS=\nEFLAGS=` on rows 0–3), then `put_hex_at(v, row, col)` (`src/vga.rs:126`) writes each `0xXXXXXXXX` value at the end of its label (`(1,4)`, `(2,3)`, `(3,7)`). Fields are copied to locals before the volatile MMIO writes.
+Both dumps share one screen layout (positional model, no global cursor — see [VGA driver](vga-driver.md)): one `putstr` prints the labels (`Title\nEIP=\nCS=\nEFLAGS=` on rows 0–3), then `put_hex_at(v, row, col)` (`src/kernel/drivers/vga.rs:126`) writes each `0xXXXXXXXX` value at the end of its label (`(1,4)`, `(2,3)`, `(3,7)`). Fields are copied to locals before the volatile MMIO writes.
 
 FFI note: the handler keeps its `extern "C"` ABI for the NASM `call`, so Clippy's `not_unsafe_ptr_arg_deref` is suppressed locally with a `SAFETY` justification instead of marking it `unsafe fn`.
 
@@ -112,7 +112,7 @@ FFI note: the handler keeps its `extern "C"` ABI for the NASM `call`, so Clippy'
 
 - **Stub-in-ASM, logic-in-Rust.** The stack surgery (`pusha`, dummy pushes, segment reloads) must be cycle-exact assembly; everything above that line — the C-equivalent handler — is Rust. The seam is one `call` with a pointer argument.
 - **Uniform frame layout.** Pushing a dummy error code for vectors 0–7/9/15–29 makes every exception arrive with an identical frame shape. One `InterruptFrame` type, one handler signature — no per-vector `if` on the C side.
-- **cfg(test) stubs.** NASM objects don't participate in the host test link, so a macro generates no-op `i686_ISR0..31` symbols for tests (`src/idt.rs:111-130`) — letting the gate-encoding logic be unit-tested without an emulator. (See [rust-for-osdev.md](rust-for-osdev.md#testing-without-hardware).)
+- **cfg(test) stubs.** NASM objects don't participate in the host test link, so a macro generates no-op `i686_ISR0..31` symbols for tests (`src/arch/x86/cpu/idt.rs:111-130`) — letting the gate-encoding logic be unit-tested without an emulator. (See [rust-for-osdev.md](rust-for-osdev.md#testing-without-hardware).)
 
 ## Why it matters
 

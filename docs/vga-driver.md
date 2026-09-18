@@ -1,31 +1,31 @@
 # VGA text mode — the first driver
 
-**Source:** `src/vga.rs`
+**Source:** `src/kernel/drivers/vga.rs`
 
 ## How it works
 
 ### The framebuffer
 
-In VGA text mode the screen is an **80×25 grid of 2-byte cells** mapped into physical memory at `0xB8000` (`src/vga.rs:11-13`):
+In VGA text mode the screen is an **80×25 grid of 2-byte cells** mapped into physical memory at `0xB8000` (`src/kernel/drivers/vga.rs:11-13`):
 
 ```
 cell = [ ascii (u8) | attribute (u8) ]
                      └─ high nibble: background, low nibble: foreground
-COLOR_WHITE_ON_BLACK = 0x0F  → white on black (src/vga.rs:16)
+COLOR_WHITE_ON_BLACK = 0x0F  → white on black (src/kernel/drivers/vga.rs:16)
 ```
 
-`ScreenCell` (`src/vga.rs:18-23`) is `#[repr(C)]` over exactly those two bytes. The video card continuously reads this RAM and renders it to the display — writing to `0xB8000` *is* the display update. This is **memory-mapped I/O**: ordinary memory addresses that are actually a window into hardware.
+`ScreenCell` (`src/kernel/drivers/vga.rs:18-23`) is `#[repr(C)]` over exactly those two bytes. The video card continuously reads this RAM and renders it to the display — writing to `0xB8000` *is* the display update. This is **memory-mapped I/O**: ordinary memory addresses that are actually a window into hardware.
 
 ### The operations
 
-- **`clear_screen`** (`src/vga.rs:60-72`) — writes the same blank cell (`b' '`, `0x0F`) to all 80×25 = 2000 cells with `write_volatile`.
-- **`putstr`** (`src/vga.rs:78-117`) — walks the string byte by byte from the top-left:
+- **`clear_screen`** (`src/kernel/drivers/vga.rs:60-72`) — writes the same blank cell (`b' '`, `0x0F`) to all 80×25 = 2000 cells with `write_volatile`.
+- **`putstr`** (`src/kernel/drivers/vga.rs:78-117`) — walks the string byte by byte from the top-left:
   - `\n` jumps to the start of the next row (`offset = (row + 1) * VGA_WIDTH`)
   - writes stop at the screen boundary (`offset >= total → break`) — no overruns past cell 1999
   - each cell's **existing color is read first** (`read_volatile`) and preserved, falling back to `0x0F` if it's zero — a hook for future colored output
   - NUL bytes are rendered as spaces instead of garbage glyphs
-- **`hex_digits`** (`src/vga.rs:40-57`) — pure `u32` → 8 uppercase hex ASCII digits, zero-padded, no MMIO / `fmt` / alloc, so it runs in `cargo test` on the host.
-- **`put_hex_at`** (`src/vga.rs:126-160`) — positional `0xXXXXXXXX` (10 cells) writer at `(row, col)` with no global cursor and no side effect on `putstr`:
+- **`hex_digits`** (`src/kernel/drivers/vga.rs:40-57`) — pure `u32` → 8 uppercase hex ASCII digits, zero-padded, no MMIO / `fmt` / alloc, so it runs in `cargo test` on the host.
+- **`put_hex_at`** (`src/kernel/drivers/vga.rs:126-160`) — positional `0xXXXXXXXX` (10 cells) writer at `(row, col)` with no global cursor and no side effect on `putstr`:
   - `base = row * VGA_WIDTH + col`, truncates if `col + 10` exceeds the line — never wraps
   - out-of-screen origin (`row >= 25` or `col >= 80`) is a safe no-op, ideal for exception dumps without erasing other rows
 
@@ -35,11 +35,11 @@ Scrolling is intentionally **not implemented yet** — parity with the original 
 
 From the optimizer's perspective, `clear_screen` is a loop that writes the same address range 2000 times where nobody ever reads the values. A compiler is allowed to collapse or elide such stores entirely — for *normal* memory that's a legal optimization, for MMIO it deletes your driver. **Volatile accesses are observable**: the compiler must perform them, in order, exactly as written.
 
-That's why every framebuffer touch is `write_volatile` / `read_volatile` (`src/vga.rs:69, 101, 107, 151, 157`), and why the SAFETY comment on each `unsafe` block (`src/vga.rs:61-64, 79-81, 127-130`) documents the ownership argument: after boot, the kernel is the sole owner of the VGA buffer, and every access is bounds-checked against `0xB8000 + 2000` cells.
+That's why every framebuffer touch is `write_volatile` / `read_volatile` (`src/kernel/drivers/vga.rs:69, 101, 107, 151, 157`), and why the SAFETY comment on each `unsafe` block (`src/kernel/drivers/vga.rs:61-64, 79-81, 127-130`) documents the ownership argument: after boot, the kernel is the sole owner of the VGA buffer, and every access is bounds-checked against `0xB8000 + 2000` cells.
 
 ## Why we did this — bugs inherited from the C original
 
-The module docstring (`src/vga.rs:1-7`) records what the C version got wrong; each fix is a small OS-dev lesson:
+The module docstring (`src/kernel/drivers/vga.rs:1-7`) records what the C version got wrong; each fix is a small OS-dev lesson:
 
 | C bug | Symptom | Rust fix |
 |---|---|---|

@@ -34,7 +34,7 @@ jobs:
         run: cargo clippy --target i686-unknown-linux-gnu -- -D warnings
 
       # Os testes rodam no host: sob cfg(test) o std volta e os símbolos NASM
-      # são substituídos por stubs (src/gdt.rs, src/idt.rs). Não precisa de
+      # são substituídos por stubs (src/arch/x86/cpu/gdt.rs, src/arch/x86/cpu/idt.rs). Não precisa de
       # glibc 32-bit no runner.
       - name: Unit tests
         run: cargo test --all-targets

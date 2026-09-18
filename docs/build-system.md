@@ -1,6 +1,6 @@
 # Build system — from Rust and NASM to a bootable image
 
-**Source:** `Makefile`, `Cargo.toml`, `rust-toolchain.toml`, `src/support.rs`
+**Source:** `Makefile`, `Cargo.toml`, `rust-toolchain.toml`, `src/kernel/support.rs`
 
 ## How it works
 
@@ -9,9 +9,9 @@
 ```
 src/*.rs ──────── cargo build --target i686-unknown-linux-gnu ──▶ target/i686-unknown-linux-gnu/debug/libyorunix.a
                                                                       │
-boot/entry.asm   ── nasm -f elf32 ──▶ build/entry.o                   │
-arch/x86/gdt.asm ── nasm -f elf32 ──▶ build/gdt_asm.o                 │
-arch/x86/idt.asm ── nasm -f elf32 ──▶ build/idt_asm.o                 │
+arch/x86/boot/entry.asm   ── nasm -f elf32 ──▶ build/entry.o                   │
+arch/x86/asm/gdt.asm ── nasm -f elf32 ──▶ build/gdt_asm.o                 │
+arch/x86/asm/idt.asm ── nasm -f elf32 ──▶ build/idt_asm.o                 │
                                                                       ▼
                   ld -m elf_i386 -z noexecstack --gc-sections -T link.ld
                                                                       │
@@ -45,7 +45,7 @@ Rust needs a target spec to emit code; `i686-unknown-linux-gnu` gives 32-bit cod
 
 A normal Rust build lets `rustc` (which invokes a C compiler driver) drive the link. That would pull in `crt0`, `libc` and a `main` — none of which exist here. YoRunix links with bare `ld` instead, which has a **price the compiler forces us to pay**: LLVM emits references to C memory functions for anything non-trivial (struct copies → `memcpy`/`memmove`, `write_bytes` → `memset`, slice comparison → `memcmp`/`bcmp`), and the `core` crate references `rust_eh_personality` for its unwind tables even under `panic = "abort"`.
 
-Nobody provides those symbols in a freestanding link — so we do, byte-wise and libc-free, in `src/support.rs:14-63`. This is not optional: without that file the link fails with undefined references (or worse, succeeds with the wrong semantic if a host libc sneaks in).
+Nobody provides those symbols in a freestanding link — so we do, byte-wise and libc-free, in `src/kernel/support.rs:14-63`. This is not optional: without that file the link fails with undefined references (or worse, succeeds with the wrong semantic if a host libc sneaks in).
 
 ### Panic strategy (`Cargo.toml:12-17`)
 

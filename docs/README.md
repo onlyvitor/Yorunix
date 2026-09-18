@@ -16,11 +16,11 @@ The docs form a narrative, best read in order:
 
 | # | Doc | Source files | Learn about |
 |---|-----|--------------|-------------|
-| 1 | [Boot flow](boot.md) | `boot/entry.asm`, `link.ld`, `boot/grub/grub.cfg` | Multiboot header, protected mode, kernel entry sequence |
-| 2 | [Build system](build-system.md) | `Makefile`, `Cargo.toml`, `src/support.rs` | Freestanding linking, static libraries, panic strategies |
-| 3 | [GDT](gdt.md) | `src/gdt.rs`, `arch/x86/gdt.asm` | x86 segments, descriptor encoding, `lgdt` + far `retf` |
-| 4 | [IDT & interrupts](idt-interrupts.md) | `src/idt.rs`, `arch/x86/idt.asm` | CPU exceptions, ISR stubs, interrupt stack frames |
-| 5 | [VGA driver](vga-driver.md) | `src/vga.rs` | Memory-mapped I/O, volatile access, first driver |
+| 1 | [Boot flow](boot.md) | `arch/x86/boot/entry.asm`, `link.ld`, `boot/grub.cfg` | Multiboot header, protected mode, kernel entry sequence |
+| 2 | [Build system](build-system.md) | `Makefile`, `Cargo.toml`, `src/kernel/support.rs` | Freestanding linking, static libraries, panic strategies |
+| 3 | [GDT](gdt.md) | `src/arch/x86/cpu/gdt.rs`, `arch/x86/asm/gdt.asm` | x86 segments, descriptor encoding, `lgdt` + far `retf` |
+| 4 | [IDT & interrupts](idt-interrupts.md) | `src/arch/x86/cpu/idt.rs`, `arch/x86/asm/idt.asm` | CPU exceptions, ISR stubs, interrupt stack frames |
+| 5 | [VGA driver](vga-driver.md) | `src/kernel/drivers/vga.rs` | Memory-mapped I/O, volatile access, first driver |
 | 6 | [Rust for OS dev](rust-for-osdev.md) | all of `src/` | Why Rust for a kernel, and the C→Rust migration log |
 
 The reading order is intentional: boot and build explain *how the code becomes a running kernel*, GDT/IDT/VGA are the three components the kernel initializes, and the Rust doc closes the loop by explaining *why the core is written the way it is* — including every bug inherited from the C original.
@@ -33,4 +33,4 @@ The reading order is intentional: boot and build explain *how the code becomes a
 
 ## Status
 
-Current feature status and the roadmap live in the [root README](../README.md#development-roadmap). The docs describe the code as it is today; roadmap items (interrupt dispatch, paging, processes, IPC) will get their own docs as they land.
+Current feature status and the roadmap live in the [root README](../README.md#development-roadmap). The docs describe the code as it is today; roadmap items (full interrupt dispatch, paging, processes, IPC) will get their own docs as they land.
