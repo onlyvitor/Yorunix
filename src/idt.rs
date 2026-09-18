@@ -148,11 +148,30 @@ fn set_gate(num: usize, base: u32, selector: u16, attr: u8) {
     }
 }
 
-/// Handler genérico chamado pelo stub ASM. Paridade com o C (no-op).
-/// Próximo passo sugerido: despachar por `int_num` e imprimir via VGA.
+/// Vetor da exceção de debug (#DB). Mantido como constante para evitar
+/// magic number no dispatch e facilitar testes no host.
+pub const DEBUG_VECTOR: u32 = 1;
+
+/// Handler genérico chamado pelo stub ASM (`push esp; call i686_ISR_handler`).
+/// Despacha por `int_num`. Por enquanto só o vetor 1 (#DB) tem handler real;
+/// os demais seguem no-op para não mudar comportamento dos outros vetores.
 #[no_mangle]
-pub extern "C" fn i686_ISR_handler(_frame: *mut InterruptFrame) {
-    // vazio; implementação depois
+// Não pode ser `unsafe fn`: é chamado via `call` direto do stub NASM.
+// O lint é suprimido localmente; a segurança é justificada no bloco abaixo.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
+    // SAFETY: o stub ASM sempre passa `esp` (ponteiro válido do frame).
+    // Checagem de nulo por defesa: em QEMU/host-test um ponteiro nulo
+    // jamais deve derrubar o kernel dentro do handler.
+    unsafe {
+        if frame.is_null() {
+            return;
+        }
+        let f = &*frame;
+        if f.int_num == DEBUG_VECTOR {
+            crate::handler::idt_handler::debug(f);
+        }
+    }
 }
 
 /// Ponto de entrada chamado pelo `boot/entry.asm`. Nome preservado.
@@ -210,5 +229,17 @@ mod tests {
     #[test]
     fn null_gate_is_zeroed() {
         assert_eq!(fields(make_gate(0, 0, 0)), (0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn debug_vector_is_one() {
+        // #DB é o vetor 1 (Intel SDM Vol.3 Ch.6). Trava o contrato do dispatch.
+        assert_eq!(DEBUG_VECTOR, 1);
+    }
+
+    #[test]
+    fn handler_ignores_null_frame() {
+        // Não deve travar nem tocar em MMIO com ponteiro nulo.
+        i686_ISR_handler(core::ptr::null_mut());
     }
 }
