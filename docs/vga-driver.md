@@ -35,7 +35,7 @@ Scrolling is intentionally **not implemented yet** — parity with the original 
 
 From the optimizer's perspective, `clear_screen` is a loop that writes the same address range 2000 times where nobody ever reads the values. A compiler is allowed to collapse or elide such stores entirely — for *normal* memory that's a legal optimization, for MMIO it deletes your driver. **Volatile accesses are observable**: the compiler must perform them, in order, exactly as written.
 
-That's why every framebuffer touch is `write_volatile` / `read_volatile` (`src/vga.rs:44, 76, 82`), and why the SAFETY comment on each `unsafe` block (`src/vga.rs:36-39, 54-56`) documents the ownership argument: after boot, the kernel is the sole owner of the VGA buffer, and every access is bounds-checked against `0xB8000 + 2000` cells.
+That's why every framebuffer touch is `write_volatile` / `read_volatile` (`src/vga.rs:69, 101, 107, 151, 157`), and why the SAFETY comment on each `unsafe` block (`src/vga.rs:61-64, 79-81, 127-130`) documents the ownership argument: after boot, the kernel is the sole owner of the VGA buffer, and every access is bounds-checked against `0xB8000 + 2000` cells.
 
 ## Why we did this — bugs inherited from the C original
 
