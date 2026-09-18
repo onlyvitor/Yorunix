@@ -43,9 +43,9 @@ The module docstring (`src/vga.rs:1-7`) records what the C version got wrong; ea
 
 | C bug | Symptom | Rust fix |
 |---|---|---|
-| `clear_screen` wrote `0x00` (NUL) and iterated `i < 80*25` with **step 2** | Screen only half cleared; NULs render as garbage glyphs | Blank cell is `b' '`, loop covers all 2000 cells (`vga.rs:35-47`) |
+| `clear_screen` wrote `0x00` (NUL) and iterated `i < 80*25` with **step 2** | Screen only half cleared; NULs render as garbage glyphs | Blank cell is `b' '`, loop covers all 2000 cells (`vga.rs:60-72`) |
 | No `volatile` on MMIO stores | Compiler permitted to eliminate "dead" stores — driver could vanish under optimization | `write_volatile`/`read_volatile` everywhere |
-| `putstr` had no `\n`, wrap, or bounds handling | Bytes written past the visible screen into adjacent memory | Full line handling + bound checks (`vga.rs:61-90`) |
+| `putstr` had no `\n`, wrap, or bounds handling | Bytes written past the visible screen into adjacent memory | Full line handling + bound checks (`vga.rs:78-117`) |
 
 (Full migration log in [rust-for-osdev.md](rust-for-osdev.md#migration-log-bugs-found-in-the-c-original).)
 
@@ -55,7 +55,7 @@ The VGA driver is the kernel's first **device**, and MMIO is the pattern behind 
 
 1. **Device memory is not normal memory.** Reads and writes have side effects; `volatile` is the compiler contract that preserves them.
 2. **Every access needs bounds and invariants written down.** The `SAFETY:` comments are the design doc living next to the code that relies on it.
-3. **A driver is an API, not a pile of register pokes.** `pub fn clear_screen() / putstr()` hide the framebuffer details so the rest of the kernel never needs to know cell layout — when the driver moves to a framebuffer or serial console later, nothing else changes.
+3. **A driver is an API, not a pile of register pokes.** `pub fn clear_screen() / putstr() / put_hex_at()` hide the framebuffer details so the rest of the kernel never needs to know cell layout — when the driver moves to a framebuffer or serial console later, nothing else changes.
 
 ## Going deeper
 
