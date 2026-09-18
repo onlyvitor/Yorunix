@@ -7,12 +7,8 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-pub mod gdt;
-pub mod handler;
-pub mod idt;
-#[cfg(not(test))]
-pub mod support;
-pub mod vga;
+pub mod arch;
+pub mod kernel;
 
 use core::arch::asm;
 #[cfg(not(test))]
@@ -32,12 +28,14 @@ fn panic(_info: &PanicInfo) -> ! {
     }
 }
 
-/// Ponto de entrada do kernel chamado pelo `boot/entry.asm`.
+/// Ponto de entrada do kernel chamado pelo `arch/x86/boot/entry.asm`.
 /// `->!` documenta que nunca retorna (o `.hang` no ASM é só fallback).
 #[no_mangle]
 pub extern "C" fn kernel_main() -> ! {
-    vga::clear_screen();
-    vga::putstr("Bem-vindo ao Yorunix!\ne magrao isso aqui ta funcionando!");
+    crate::kernel::drivers::vga::clear_screen();
+    crate::kernel::drivers::vga::putstr(
+        "Bem-vindo ao Yorunix!\ne magrao isso aqui ta funcionando!",
+    );
     loop {
         // SAFETY: `hlt` economiza energia até a próxima interrupção; o loop
         // garante que nunca retornamos ao chamador ASM.

@@ -92,7 +92,7 @@ extern "C" {
 #[allow(non_snake_case)]
 unsafe fn i686_GDT_Load(_desc: *const GdtDescriptor, _code: u16, _data: u16) {}
 
-/// Ponto de entrada chamado pelo `boot/entry.asm`.
+/// Ponto de entrada chamado pelo `arch/x86/boot/entry.asm`.
 /// Mantém o nome/símbolo exato do C para não tocar o ASM.
 #[no_mangle]
 pub extern "C" fn i686_GDT_Initialize() {

@@ -172,14 +172,14 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
         }
         let f = &*frame;
         if f.int_num == DIVIDE_VECTOR {
-            crate::handler::idt_handler::divide_error(f);
+            crate::kernel::interrupts::exceptions::divide_error(f);
         } else if f.int_num == DEBUG_VECTOR {
-            crate::handler::idt_handler::debug(f);
+            crate::kernel::interrupts::exceptions::debug(f);
         }
     }
 }
 
-/// Ponto de entrada chamado pelo `boot/entry.asm`. Nome preservado.
+/// Ponto de entrada chamado pelo `arch/x86/boot/entry.asm`. Nome preservado.
 #[no_mangle]
 pub extern "C" fn idt_init() {
     const ATTR: u8 = PRESENT | RING0 | TYPE_INTERRUPT_GATE;
@@ -215,7 +215,7 @@ pub extern "C" fn idt_init() {
 mod tests {
     use super::*;
 
-    // Ver nota em gdt::tests: campos packed são copiados, nunca referenciados.
+    // Ver nota em crate::arch::x86::cpu::gdt::tests: campos packed são copiados, nunca referenciados.
     fn fields(g: IdtEntry) -> (u16, u16, u8, u8, u16) {
         (g.base_low, g.selector, g.zero, g.attr, g.base_high)
     }

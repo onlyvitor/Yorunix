@@ -1,5 +1,5 @@
-use crate::idt::InterruptFrame;
-use crate::vga;
+use crate::arch::x86::cpu::idt::InterruptFrame;
+use crate::kernel::drivers::vga;
 use core::arch::asm;
 // #DE — Divide Error, vector 0, fault, sem error code (ISR_NOERRCODE).
 // Dispara em `div`/`idiv` com divisor 0 ou quociente que não cabe no
