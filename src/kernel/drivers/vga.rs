@@ -56,6 +56,27 @@ fn hex_digits(v: u32) -> [u8; 8] {
     out
 }
 
+/// Builds the `0xXXXXXXXX` (10 cells) text for a `u32` value.
+///
+/// Pure function: no MMIO, no alloc, no `fmt` — safe in freestanding and
+/// testable on the host (`cargo test`). Extracted from `put_hex_at` so the
+/// MMIO writer never depends on `copy_from_slice` (which can lower to a
+/// `memcpy` call provided by `kernel::support` — a recursion hazard with
+/// plain `ld` and no compiler-rt).
+fn format_hex(v: u32) -> [u8; 10] {
+    let digits = hex_digits(v);
+    let mut text = [b'0'; 10];
+    text[0] = b'0';
+    text[1] = b'x';
+    // Manual byte copy: deliberately avoids `copy_from_slice`.
+    let mut i = 0;
+    while i < 8 {
+        text[2 + i] = digits[i];
+        i += 1;
+    }
+    text
+}
+
 /// Clears the whole screen to blank spaces.
 pub fn clear_screen() {
     // SAFETY: 0xB8000 is the VGA text-mode buffer mapped by the hardware/BIOS on
@@ -133,19 +154,18 @@ pub fn put_hex_at(v: u32, row: usize, col: usize) {
         if row >= VGA_HEIGHT || col >= VGA_WIDTH {
             return;
         }
-        // Build the `0x` + 8-digit text in a local buffer (no alloc, no fmt).
-        let digits = hex_digits(v);
-        let mut text = [b'0'; 10];
-        text[0] = b'0';
-        text[1] = b'x';
-        text[2..].copy_from_slice(&digits);
+        // Build the `0x` + 8-digit text via the pure helper (no
+        // `copy_from_slice`, no iterator adapters: freestanding-safe).
+        let text = format_hex(v);
 
         let buf = buffer();
         let base = row * VGA_WIDTH + col;
         // Remaining width on this row: guarantees truncation without wrapping.
         let room = VGA_WIDTH - col;
         let len = if text.len() < room { text.len() } else { room };
-        for (i, &b) in text.iter().enumerate().take(len) {
+        let mut i = 0;
+        while i < len {
+            let b = text[i];
             let offset = base + i;
             // Preserve the cell's current color, as in `putstr`.
             let color = read_volatile(buf.add(offset)).color;
@@ -155,6 +175,7 @@ pub fn put_hex_at(v: u32, row: usize, col: usize) {
                 color
             };
             write_volatile(buf.add(offset), ScreenCell { ascii: b, color });
+            i += 1;
         }
     }
 }
@@ -189,5 +210,13 @@ mod tests {
     fn hex_digits_uses_uppercase() {
         // Ensure uppercase `A..F`, not `a..f`.
         assert_eq!(hex_digits(0x00AB_CDEF), *b"00ABCDEF");
+    }
+
+    #[test]
+    fn format_hex_has_prefix_and_padding() {
+        assert_eq!(format_hex(0x0000_0000), *b"0x00000000");
+        assert_eq!(format_hex(0x1234_ABCD), *b"0x1234ABCD");
+        assert_eq!(format_hex(0xFFFF_FFFF), *b"0xFFFFFFFF");
+        assert_eq!(format_hex(0x00F0_000A), *b"0x00F0000A");
     }
 }
