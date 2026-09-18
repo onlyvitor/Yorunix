@@ -1,7 +1,11 @@
 use crate::idt::InterruptFrame;
 use crate::vga;
 use core::arch::asm;
-// #DE
+// #DE — Divide Error, vector 0, fault, sem error code (ISR_NOERRCODE).
+// Dispara em `div`/`idiv` com divisor 0 ou quociente que não cabe no
+// registrador destino (ex.: `mov ax, 0xFFFF / mov bl, 0 / div bl`).
+// Fatal: `iret` retornaria ao mesmo `eip` e refaria a divisão em loop,
+// então imprime e TRAVA (`cli/hlt`) em vez de retornar. Nunca `ret` aqui.
 pub extern "C" fn divide_error(_frame: &InterruptFrame) {
     vga::clear_screen();
     vga::putstr("Divide by Zero!\n");
