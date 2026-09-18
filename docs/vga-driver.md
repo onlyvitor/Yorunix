@@ -18,8 +18,8 @@ COLOR_WHITE_ON_BLACK = 0x0F  → white on black (src/vga.rs:16)
 
 ### The two operations
 
-- **`clear_screen`** (`src/vga.rs:35-47`) — writes the same blank cell (`b' '`, `0x0F`) to all 80×25 = 2000 cells with `write_volatile`.
-- **`putstr`** (`src/vga.rs:53-91`) — walks the string byte by byte from the top-left:
+- **`clear_screen`** (`src/vga.rs:60-72`) — writes the same blank cell (`b' '`, `0x0F`) to all 80×25 = 2000 cells with `write_volatile`.
+- **`putstr`** (`src/vga.rs:78-117`) — walks the string byte by byte from the top-left:
   - `\n` jumps to the start of the next row (`offset = (row + 1) * VGA_WIDTH`)
   - writes stop at the screen boundary (`offset >= total → break`) — no overruns past cell 1999
   - each cell's **existing color is read first** (`read_volatile`) and preserved, falling back to `0x0F` if it's zero — a hook for future colored output
