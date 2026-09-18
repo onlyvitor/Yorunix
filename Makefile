@@ -57,7 +57,7 @@ $(IDT_ASM_OBJ): $(IDT_ASM_SRC)
 	$(AS) $(ASFLAGS) -o $@ $<
 
 check:
-	$(CARGO) check --target $(RUST_TARGET)
+	$(CARGO) fmt --all -- --check && $(CARGO) clippy --all-targets -- -D warnings && $(CARGO) clippy --target $(RUST_TARGET) -- -D warnings && $(CARGO) test --all-targets
 
 clean:
 	rm -rf $(BUILD_DIR)
