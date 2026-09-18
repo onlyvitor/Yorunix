@@ -126,4 +126,4 @@ Exceptions are **how the CPU talks to the operating system**: a page fault, a di
 - [Intel SDM Vol. 3, Chapter 6](https://www.intel.com/sdm) — exception and interrupt reference, error codes per vector
 - [OSDev Wiki — IDT](https://wiki.osdev.org/IDT) — gate format and loading
 - [OSDev Wiki — Interrupts](https://wiki.osdev.org/Interrupts) and [Exceptions](https://wiki.osdev.org/Exceptions) — vector map, error-code semantics
-- [Writing an OS in Rust — Interrupts](https://os.phil-opp.com/interrupts/) — the modern long-mode version of this same machinery
+- [Writing an OS in Rust — Interrupts](https://os.phil-opp.com/cpu-exceptions/) — the modern long-mode version of this same machinery

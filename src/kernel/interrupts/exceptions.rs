@@ -55,9 +55,20 @@ pub fn no_maskable_interrupt(_frame: &InterruptFrame) {
     vga::putstr("No maskable interrupt!\n");
 }
 
-//#BP
-pub fn breakpoint(_frame: &InterruptFrame) {
-    vga::putstr("Breakpoint!\n");
+//#BP vector 3 - A Breakpoint exception occurs at the execution of the INT3 instruction.
+//Some debug software replace an instruction by the INT3 instruction. When the breakpoint is trapped, it replaces
+//the INT3 instruction with the original instruction, and decrements the instruction pointer by one.
+pub fn breakpoint(frame: &InterruptFrame) {
+    //same implementation of debug exception
+    let eip = frame.eip;
+    let cs = frame.cs;
+    let eflags = frame.eflags;
+
+    vga::clear_screen();
+    vga::putstr("Debug Exception (#DB)!\nEIP=\nCS=\nEFLAGS=\n");
+    vga::put_hex_at(eip, 1, 4);
+    vga::put_hex_at(cs, 2, 3);
+    vga::put_hex_at(eflags, 3, 7);
 }
 
 //#OF

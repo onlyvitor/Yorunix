@@ -10,6 +10,8 @@
 
 use core::mem::size_of;
 
+use crate::kernel::drivers::vga;
+
 pub const PRESENT: u8 = 0x80;
 pub const RING0: u8 = 0x00;
 pub const TYPE_INTERRUPT_GATE: u8 = 0x0E;
@@ -155,6 +157,9 @@ pub const DIVIDE_VECTOR: u32 = 0;
 /// magic number in dispatch and to ease testing on the host.
 pub const DEBUG_VECTOR: u32 = 1;
 
+/// Breakpoint exception vector. keep constant
+pub const BREAKPOINT_VECTOR: u32 = 3;
+
 /// Generic handler called by the ASM stub (`push esp; call i686_ISR_handler`).
 /// Dispatches on `int_num`. Vectors 0 (#DE) and 1 (#DB) have a real handler;
 /// the rest remain no-op so as not to change the behavior of the other vectors.
@@ -171,10 +176,13 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
             return;
         }
         let f = &*frame;
-        if f.int_num == DIVIDE_VECTOR {
-            crate::kernel::interrupts::exceptions::divide_error(f);
-        } else if f.int_num == DEBUG_VECTOR {
-            crate::kernel::interrupts::exceptions::debug(f);
+        match f.int_num {
+            DIVIDE_VECTOR => crate::kernel::interrupts::exceptions::divide_error(f),
+            DEBUG_VECTOR => crate::kernel::interrupts::exceptions::debug(f),
+            BREAKPOINT_VECTOR => crate::kernel::interrupts::exceptions::breakpoint(f),
+            _ => {
+                vga::putstr("not implemented yet");
+            }
         }
     }
 }
