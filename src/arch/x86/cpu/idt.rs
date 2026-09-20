@@ -12,8 +12,6 @@
 
 use core::mem::size_of;
 
-use crate::kernel::drivers::vga;
-
 pub const PRESENT: u8 = 0x80;
 pub const RING0: u8 = 0x00;
 pub const TYPE_INTERRUPT_GATE: u8 = 0x0E;
@@ -163,9 +161,8 @@ pub const DEBUG_VECTOR: u32 = 1;
 pub const BREAKPOINT_VECTOR: u32 = 3;
 
 /// Generic handler called by the ASM stub (`push esp; call i686_ISR_handler`).
-/// Dispatches on `int_num`. Vectors migrate to real handlers group by group
-/// (per-vector policy lives in `exceptions.rs`); unwired ones still fall
-/// through to a "not implemented yet" message.
+/// Dispatches on `int_num` exhaustively: all 32 exception vectors have a real
+/// handler. The per-vector policy (return vs halt) lives in `exceptions.rs`.
 #[no_mangle]
 // Cannot be an `unsafe fn`: it is called via a direct `call` from the NASM stub.
 // The lint is suppressed locally; safety is justified in the block below.
@@ -182,6 +179,7 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
         match f.int_num {
             DIVIDE_VECTOR => crate::kernel::interrupts::exceptions::divide_error(f),
             DEBUG_VECTOR => crate::kernel::interrupts::exceptions::debug(f),
+            2 => crate::kernel::interrupts::exceptions::no_maskable_interrupt(f),
             BREAKPOINT_VECTOR => crate::kernel::interrupts::exceptions::breakpoint(f),
             4 => crate::kernel::interrupts::exceptions::overflow(f),
             5 => crate::kernel::interrupts::exceptions::bound_range_exceeded(f),
@@ -194,6 +192,7 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
             12 => crate::kernel::interrupts::exceptions::stack_segment_fault(f),
             13 => crate::kernel::interrupts::exceptions::general_protection_fault(f),
             14 => crate::kernel::interrupts::exceptions::page_fault(f),
+            15 | 22..=29 | 31 => crate::kernel::interrupts::exceptions::reserved(f),
             16 => crate::kernel::interrupts::exceptions::floating_point_error(f),
             17 => crate::kernel::interrupts::exceptions::alignment_check(f),
             18 => crate::kernel::interrupts::exceptions::machine_check(f),
@@ -201,9 +200,9 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
             20 => crate::kernel::interrupts::exceptions::virtualization(f),
             21 => crate::kernel::interrupts::exceptions::control_protection(f),
             30 => crate::kernel::interrupts::exceptions::security_exception(f),
-            _ => {
-                vga::putstr("not implemented yet");
-            }
+            // Unreachable: the IDT only gates 0..31 and each stub pushes its
+            // own vector. Reaching here means a corrupt int_num — park.
+            _ => crate::kernel::interrupts::exceptions::halt(),
         }
     }
 }

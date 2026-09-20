@@ -126,9 +126,12 @@ pub fn debug(frame: &InterruptFrame) {
     dump_exception("Debug Exception (#DB)!", frame, false);
 }
 
-//NMI
-pub fn no_maskable_interrupt(_frame: &InterruptFrame) {
-    vga::putstr("No maskable interrupt!\n");
+// NMI vector 2 — Non-Maskable Interrupt (ignores IF; can arrive even under
+// `cli`). Asynchronous, so returning would be legal, but with no NMI source
+// registered the safest response is to freeze with a dump.
+pub fn no_maskable_interrupt(frame: &InterruptFrame) {
+    dump_exception("Non-Maskable Interrupt (NMI)!", frame, false);
+    halt();
 }
 
 //#BP vector 3 — Breakpoint, raised by the INT3 instruction.
@@ -273,9 +276,13 @@ pub fn security_exception(frame: &InterruptFrame) {
     halt();
 }
 
-// Reserved exceptions (32..255) — parity with C (no-op).
-pub fn reserved(_frame: &InterruptFrame) {
-    vga::putstr("Reserved exception!\n");
+// Reserved vectors 15 and 22–31 (minus 30, see security_exception) — the CPU
+// never raises them, but every gate is PRESENT, so `int $n` software
+// interrupts DO reach here. Reaching this handler means either a stray `int`
+// or corruption: dump and halt.
+pub fn reserved(frame: &InterruptFrame) {
+    dump_exception("Reserved Vector (15, 22-29, 31)!", frame, false);
+    halt();
 }
 
 #[cfg(test)]
