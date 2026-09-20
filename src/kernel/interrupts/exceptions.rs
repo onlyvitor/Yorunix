@@ -169,9 +169,14 @@ pub fn device_not_available(frame: &InterruptFrame) {
     halt();
 }
 
-//#DF
-pub fn double_fault(_frame: &InterruptFrame) {
-    vga::putstr("Double fault!\n");
+//#DF vector 8 — Double Fault, abort-class; the CPU always pushes an error
+// code (0) and the NASM stub uses the ERRCODE form.
+// KNOWN LIMITATION: there is no task gate / separate stack, so the handler
+// runs on the same stack that may itself have caused the fault — the dump
+// can fault again (triple fault). Fixing it needs a TSS (plan.md Phase 5).
+pub fn double_fault(frame: &InterruptFrame) {
+    dump_exception("Double Fault (#DF)!", frame, true);
+    halt();
 }
 
 //#CSO vector 9 — Coprocessor Segment Overrun (legacy 286/386 fault).
@@ -181,29 +186,39 @@ pub fn coprocessor_segment_overrun(frame: &InterruptFrame) {
     halt();
 }
 
-//TS
-pub fn invalid_tss(_frame: &InterruptFrame) {
-    vga::putstr("Invalid TSS!\n");
+//#TS vector 10 — Invalid TSS, fault; error code = the offending selector/index.
+pub fn invalid_tss(frame: &InterruptFrame) {
+    dump_exception("Invalid TSS (#TS)!", frame, true);
+    halt();
 }
 
-//#NP
-pub fn segment_not_present(_frame: &InterruptFrame) {
-    vga::putstr("Segment not present!\n");
+//#NP vector 11 — Segment Not Present, fault; error code = the selector.
+pub fn segment_not_present(frame: &InterruptFrame) {
+    dump_exception("Segment Not Present (#NP)!", frame, true);
+    halt();
 }
 
-//#SS
-pub fn stack_segment_fault(_frame: &InterruptFrame) {
-    vga::putstr("Stack segment fault!\n");
+//#SS vector 12 — Stack-Segment Fault, fault; error code = selector or 0.
+pub fn stack_segment_fault(frame: &InterruptFrame) {
+    dump_exception("Stack Segment Fault (#SS)!", frame, true);
+    halt();
 }
 
-//#GP
-pub fn general_protection_fault(_frame: &InterruptFrame) {
-    vga::putstr("General protection fault!\n");
+//#GP vector 13 — General Protection, fault; error code = selector or 0.
+// The "something illegal happened" catch-all: bad selector, privileged
+// instruction, null-DS load in 32-bit mode, ...
+pub fn general_protection_fault(frame: &InterruptFrame) {
+    dump_exception("General Protection Fault (#GP)!", frame, true);
+    halt();
 }
 
-//#PF
-pub fn page_fault(_frame: &InterruptFrame) {
-    vga::putstr("Page fault!\n");
+//#PF vector 14 — Page Fault, fault; error code describes the access.
+// Recoverable once paging exists (plan.md Phase 4); until then it is fatal —
+// `iret` would re-execute the same invalid access. The faulting address
+// (`cr2`) is not in the frame yet; it becomes printable when paging lands.
+pub fn page_fault(frame: &InterruptFrame) {
+    dump_exception("Page Fault (#PF)!", frame, true);
+    halt();
 }
 
 //#MF vector 16 — x87 FPU Error (fired on FWAIT/FNINIT when CR0.NE=0).
@@ -213,9 +228,11 @@ pub fn floating_point_error(frame: &InterruptFrame) {
     halt();
 }
 
-//#AC
-pub fn alignment_check(_frame: &InterruptFrame) {
-    vga::putstr("Alignment check!\n");
+//#AC vector 17 — Alignment Check, fault (CR0.AM + EFLAGS.AC, CPL 3 mostly);
+// the CPU pushes an error code (always 0). Fatal today.
+pub fn alignment_check(frame: &InterruptFrame) {
+    dump_exception("Alignment Check (#AC)!", frame, true);
+    halt();
 }
 
 //#MC vector 18 — Machine Check, abort-class hardware error.
@@ -249,9 +266,11 @@ pub fn control_protection(frame: &InterruptFrame) {
     halt();
 }
 
-//#SX
-pub fn security_exception(_frame: &InterruptFrame) {
-    vga::putstr("Security exception!\n");
+//#SX vector 30 — Security Exception (AMD; newer CPUs push an error code).
+// The NASM stub uses the ERRCODE form here (idt.asm).
+pub fn security_exception(frame: &InterruptFrame) {
+    dump_exception("Security Exception (#SX)!", frame, true);
+    halt();
 }
 
 // Reserved exceptions (32..255) — parity with C (no-op).

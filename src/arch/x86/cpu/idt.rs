@@ -187,12 +187,20 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
             5 => crate::kernel::interrupts::exceptions::bound_range_exceeded(f),
             6 => crate::kernel::interrupts::exceptions::invalid_opcode(f),
             7 => crate::kernel::interrupts::exceptions::device_not_available(f),
+            8 => crate::kernel::interrupts::exceptions::double_fault(f),
             9 => crate::kernel::interrupts::exceptions::coprocessor_segment_overrun(f),
+            10 => crate::kernel::interrupts::exceptions::invalid_tss(f),
+            11 => crate::kernel::interrupts::exceptions::segment_not_present(f),
+            12 => crate::kernel::interrupts::exceptions::stack_segment_fault(f),
+            13 => crate::kernel::interrupts::exceptions::general_protection_fault(f),
+            14 => crate::kernel::interrupts::exceptions::page_fault(f),
             16 => crate::kernel::interrupts::exceptions::floating_point_error(f),
+            17 => crate::kernel::interrupts::exceptions::alignment_check(f),
             18 => crate::kernel::interrupts::exceptions::machine_check(f),
             19 => crate::kernel::interrupts::exceptions::simd_floating_point(f),
             20 => crate::kernel::interrupts::exceptions::virtualization(f),
             21 => crate::kernel::interrupts::exceptions::control_protection(f),
+            30 => crate::kernel::interrupts::exceptions::security_exception(f),
             _ => {
                 vga::putstr("not implemented yet");
             }
