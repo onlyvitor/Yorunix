@@ -139,23 +139,34 @@ pub fn breakpoint(frame: &InterruptFrame) {
     dump_exception("Breakpoint Exception (#BP)!", frame, false);
 }
 
-//#OF
-pub fn overflow(_frame: &InterruptFrame) {
-    vga::putstr("Overflow!\n");
+//#OF vector 4 — Overflow, trap raised by INTO when OF=1.
+// The kernel never executes INTO, so reaching here means something deeply
+// unexpected: dump and halt instead of resuming into unknown state.
+pub fn overflow(frame: &InterruptFrame) {
+    dump_exception("Overflow Exception (#OF)!", frame, false);
+    halt();
 }
 
-//#BR
-pub fn bound_range_exceeded(_frame: &InterruptFrame) {
-    vga::putstr("Bound range exceeded!\n");
+//#BR vector 5 — Bound Range Exceeded, raised by BOUND with an out-of-range index.
+// No consumer of BOUND exists; dump and halt.
+pub fn bound_range_exceeded(frame: &InterruptFrame) {
+    dump_exception("Bound Range Exceeded (#BR)!", frame, false);
+    halt();
 }
 
-//#UD
-pub fn invalid_opcode(_frame: &InterruptFrame) {
-    vga::putstr("Invalid opcode!\n");
+//#UD vector 6 — Invalid Opcode, fault on an undefined/invalid instruction.
+// Fatal: `iret` re-executes the same invalid instruction in a loop.
+pub fn invalid_opcode(frame: &InterruptFrame) {
+    dump_exception("Invalid Opcode (#UD)!", frame, false);
+    halt();
 }
-//#NM
-pub fn device_not_available(_frame: &InterruptFrame) {
-    vga::putstr("Device not available!\n");
+
+//#NM vector 7 — Device Not Available, fault on x87 use with CR0.EM/TS set.
+// Returning would re-execute the FPU instruction; proper lazy FPU handling
+// is far future, so dump and halt.
+pub fn device_not_available(frame: &InterruptFrame) {
+    dump_exception("Device Not Available (#NM)!", frame, false);
+    halt();
 }
 
 //#DF
@@ -163,9 +174,11 @@ pub fn double_fault(_frame: &InterruptFrame) {
     vga::putstr("Double fault!\n");
 }
 
-//CSO
-pub fn coprocessor_segment_overrun(_frame: &InterruptFrame) {
-    vga::putstr("Coprocessor segment overrun!\n");
+//#CSO vector 9 — Coprocessor Segment Overrun (legacy 286/386 fault).
+// Fatal; no recovery path exists on modern hardware anyway.
+pub fn coprocessor_segment_overrun(frame: &InterruptFrame) {
+    dump_exception("Coprocessor Segment Overrun (#CSO)!", frame, false);
+    halt();
 }
 
 //TS
@@ -193,9 +206,11 @@ pub fn page_fault(_frame: &InterruptFrame) {
     vga::putstr("Page fault!\n");
 }
 
-//MF
-pub fn floating_point_error(_frame: &InterruptFrame) {
-    vga::putstr("Floating point error!\n");
+//#MF vector 16 — x87 FPU Error (fired on FWAIT/FNINIT when CR0.NE=0).
+// Fatal; `iret` would re-execute the x87 instruction.
+pub fn floating_point_error(frame: &InterruptFrame) {
+    dump_exception("x87 Floating Point Exception (#MF)!", frame, false);
+    halt();
 }
 
 //#AC
@@ -203,19 +218,35 @@ pub fn alignment_check(_frame: &InterruptFrame) {
     vga::putstr("Alignment check!\n");
 }
 
-//#MC
-pub fn machine_check(_frame: &InterruptFrame) {
-    vga::putstr("Machine check!\n");
+//#MC vector 18 — Machine Check, abort-class hardware error.
+// State is not trustworthy: dump what is safe and halt.
+pub fn machine_check(frame: &InterruptFrame) {
+    dump_exception("Machine Check (#MC)!", frame, false);
+    halt();
 }
 
-//#XM/XF
-pub fn simd_floating_point(_frame: &InterruptFrame) {
-    vga::putstr("SIMD floating point exception!\n");
+//#XM/XF vector 19 — SIMD Floating Point Exception (SSE fault).
+// Fatal; `iret` would re-execute the SSE instruction.
+pub fn simd_floating_point(frame: &InterruptFrame) {
+    dump_exception("SIMD Floating Point Exception (#XM)!", frame, false);
+    halt();
 }
 
-//#VE
-pub fn virtualization(_frame: &InterruptFrame) {
-    vga::putstr("Virtualization exception!\n");
+//#VE vector 20 — Virtualization Exception (requires VMX; cannot fire on this
+// bare-metal/legacy target, but the gate is wired for completeness).
+pub fn virtualization(frame: &InterruptFrame) {
+    dump_exception("Virtualization Exception (#VE)!", frame, false);
+    halt();
+}
+
+//#CP vector 21 — Control Protection (CET: shadow stack / IBT violations).
+// NOTE: the NASM stub keeps this vector in the NOERR group (idt.asm), so an
+// error code pushed by a real CET event would misalign this frame. CET does
+// not exist on the i686 target, and `int $21` pushes no error code, so the
+// dump stays consistent. See the annotation in idt.asm.
+pub fn control_protection(frame: &InterruptFrame) {
+    dump_exception("Control Protection Exception (#CP)!", frame, false);
+    halt();
 }
 
 //#SX

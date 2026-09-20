@@ -183,6 +183,16 @@ pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
             DIVIDE_VECTOR => crate::kernel::interrupts::exceptions::divide_error(f),
             DEBUG_VECTOR => crate::kernel::interrupts::exceptions::debug(f),
             BREAKPOINT_VECTOR => crate::kernel::interrupts::exceptions::breakpoint(f),
+            4 => crate::kernel::interrupts::exceptions::overflow(f),
+            5 => crate::kernel::interrupts::exceptions::bound_range_exceeded(f),
+            6 => crate::kernel::interrupts::exceptions::invalid_opcode(f),
+            7 => crate::kernel::interrupts::exceptions::device_not_available(f),
+            9 => crate::kernel::interrupts::exceptions::coprocessor_segment_overrun(f),
+            16 => crate::kernel::interrupts::exceptions::floating_point_error(f),
+            18 => crate::kernel::interrupts::exceptions::machine_check(f),
+            19 => crate::kernel::interrupts::exceptions::simd_floating_point(f),
+            20 => crate::kernel::interrupts::exceptions::virtualization(f),
+            21 => crate::kernel::interrupts::exceptions::control_protection(f),
             _ => {
                 vga::putstr("not implemented yet");
             }
