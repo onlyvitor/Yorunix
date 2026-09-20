@@ -1,3 +1,23 @@
+//! CPU exception handlers (vectors 0–31) — the policy layer under the
+//! `i686_ISR_handler` dispatch in `arch/x86/cpu/idt.rs`.
+//!
+//! Per-vector policy, fixed once and reused by every handler:
+//!
+//! - **Return only when resuming is meaningful: #DB (1) and #BP (3).**
+//!   These traps resume past the instruction, which is what single-step and
+//!   `int3` debugging need.
+//! - **Everything else: dump + halt.** For a fault, `iret` re-executes the
+//!   faulting instruction and loops — there is no paging, no user mode, and
+//!   no consumer of `into`/`bound`/FPU to recover into.
+//! - **`ERR=` only for the CPU error-code group** (8, 10–14, 17, 30);
+//!   elsewhere the NASM stub pushes a dummy `0` that would mislead.
+//! - Known limitation: #DF (8) runs on the same stack that may have caused
+//!   the fault — the dump itself can fault again (triple fault). Fixing it
+//!   needs a task gate / TSS (plan.md Phase 5).
+//!
+//! Output goes through `dump_exception` (VGA today; a serial sink later plugs
+//! in there without touching handlers); fatal handlers end in `halt`.
+
 use crate::arch::x86::cpu::idt::InterruptFrame;
 use crate::kernel::drivers::vga;
 use core::arch::asm;

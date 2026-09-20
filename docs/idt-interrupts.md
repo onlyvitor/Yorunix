@@ -93,18 +93,23 @@ core::arch::asm!("lidt [{}]", in(reg) &desc, options(nostack, preserves_flags));
 
 A single 3-byte instruction; no NASM round-trip needed. `make_gate` is a `const fn` that never touches the global table — encoding is pure and host-testable (`src/arch/x86/cpu/idt.rs:225-236`).
 
-### Dispatch: vectors 0–1 are live (`src/arch/x86/cpu/idt.rs:151-180`)
+### Dispatch and the per-vector policy (`src/arch/x86/cpu/idt.rs`, `src/kernel/interrupts/exceptions.rs`)
 
-`i686_ISR_handler` is no longer a no-op. It null-guards the ASM-passed `*mut InterruptFrame`, then dispatches on `int_num` via named constants (`DIVIDE_VECTOR = 0`, `DEBUG_VECTOR = 1`), both pinned by host tests:
+`i686_ISR_handler` null-guards the ASM-passed `*mut InterruptFrame`, then dispatches on `int_num` (named constants pin vectors 0, 1 and 3; host tests lock them). Handlers migrate vector by vector — the source shows the exact current wiring — but the policy each one follows is fixed:
 
-| Vector | Handler (`src/kernel/interrupts/exceptions.rs`) | Class | Behavior |
-|---|---|---|---|
-| 0 `#DE` | `divide_error:9` | Fatal fault, no error code | Dumps `EIP/CS/EFLAGS`, then `cli/hlt` loops forever — `iret` would re-execute the same faulting `div` |
-| 1 `#DB` | `debug:35` | Recoverable fault, no error code | Dumps `EIP/CS/EFLAGS`, then **returns** so `iret` resumes (single-step / hw breakpoint) |
+**Return only when resuming is meaningful: `#DB` (1) and `#BP` (3). Everything else: dump + halt.**
 
-Vectors 2–31 still fall through to no-op, preserving prior behavior until each gets its handler.
+For a *fault*, `iret` re-executes the faulting instruction — with no paging, no user mode and no consumer of `into`/`bound`/FPU, resuming means an infinite exception loop. Traps (`#DB`/`#BP`) resume past the instruction, which is exactly what single-step and `int3` debugging need.
 
-Both dumps share one screen layout (positional model, no global cursor — see [VGA driver](vga-driver.md)): one `putstr` prints the labels (`Title\nEIP=\nCS=\nEFLAGS=` on rows 0–3), then `put_hex_at(v, row, col)` (`src/kernel/drivers/vga.rs:147`) writes each `0xXXXXXXXX` value at the end of its label (`(1,4)`, `(2,3)`, `(3,7)`). Fields are copied to locals before the volatile MMIO writes. Hex text is built by the pure `format_hex` helper (`vga.rs:66-78`), which — like `support.rs` — uses only `while` byte loops so LLVM never emits a `memcpy` call on the exception path.
+| Vectors | Class | Behavior |
+|---|---|---|
+| 1 `#DB`, 3 `#BP` | trap | dump + **return** |
+| 0 `#DE`, 2 NMI, 4 `#OF`, 5 `#BR`, 6 `#UD`, 7 `#NM`, 9 `#CSO`, 16 `#MF`, 18 `#MC`, 19 `#XM`, 20 `#VE`, 21 `#CP`, 15/22–29/31 reserved | fatal, no error code | dump + halt |
+| 8 `#DF`, 10 `#TS`, 11 `#NP`, 12 `#SS`, 13 `#GP`, 14 `#PF`, 17 `#AC`, 30 `#SX` | fatal, CPU pushes an error code | dump (+ `ERR=`) + halt |
+
+`ERR=` is printed only for the error-code group: elsewhere the NASM stub pushes a dummy `0` that would be misleading. Reserved vectors stay reachable via `int $n` (every gate is PRESENT); NMI ignores `cli`. Known limitation: `#DF` runs on the same stack that may have caused the fault, so the dump itself can fault again (triple fault) — fixing it needs a task gate / TSS (plan.md Phase 5).
+
+All dumps flow through one shared helper, `dump_exception` (`exceptions.rs`), fed by the pure, host-tested `build_dump_text`: it composes the single `putstr` payload (`Title\nEIP=\nCS=\nEFLAGS=` on rows 0–3, plus `ERR=` on row 4), then `put_hex_at(v, row, col)` (`src/kernel/drivers/vga.rs:147`) writes each `0xXXXXXXXX` value at the end of its label (`(1,4)`, `(2,3)`, `(3,7)`, `(4,4)`). Fields are copied to locals before the volatile MMIO writes; fatal handlers end in the shared `halt()` (`cli` + `hlt` loop). Hex text is built by the pure `format_hex` helper (`vga.rs:66-78`), which — like `support.rs` — uses only `while` byte loops so LLVM never emits a `memcpy` call on the exception path.
 
 FFI note: the handler keeps its `extern "C"` ABI for the NASM `call`, so Clippy's `not_unsafe_ptr_arg_deref` is suppressed locally with a `SAFETY` justification instead of marking it `unsafe fn`.
 
@@ -119,7 +124,7 @@ FFI note: the handler keeps its `extern "C"` ABI for the NASM `call`, so Clippy'
 Exceptions are **how the CPU talks to the operating system**: a page fault, a divide-by-zero, a GP fault — all arrive through this exact pipeline. Every driver interrupt and every syscall entry will reuse the machinery built here. The two universal lessons:
 
 1. **Frame discipline.** Interrupt code is stack bookkeeping; one wrong `push`/`pop` and `iret` returns to a corrupted context. The `InterruptFrame` struct *is* the specification of that bookkeeping.
-2. **Bring-up ordering.** Vectors 0–1 print diagnostics while 2–31 stay no-op — it converts "triple fault, QEMU restarts" into "exception happened, we're alive". Observable failure beats silent failure.
+2. **Bring-up ordering.** Vectors migrate from no-op to dump-then-halt (or dump-and-return) handlers group by group, before interrupts or user mode exist — it converts "triple fault, QEMU restarts" into "exception happened, here is the frame". Observable failure beats silent failure.
 
 ## Going deeper
 
