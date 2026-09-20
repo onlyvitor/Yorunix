@@ -1,8 +1,10 @@
 //! IDT — Interrupt Descriptor Table (32-bit).
 //!
 //! Replaces `arch/x86/idt.c` + `idt.h` while preserving the contract with `idt.asm`:
-//! - `i686_ISR_common` does `pusha; mov ds/es/fs/gs,0x10; push esp; call
-//!   i686_ISR_handler; add esp,4; popa; add esp,8; iret`.
+//! - `i686_ISR_common` does `pusha; mov ds/es/fs/gs,0x10; save esp; realign;
+//!   call i686_ISR_handler(frame); restore esp; popa; add esp,8; iret` — the
+//!   realignment gives the Rust handler the SysV 16-byte stack alignment
+//!   LLVM-emitted SSE assumes (see idt.asm).
 //! - Hence `InterruptFrame` replicates exactly that push order.
 //!
 //! Fixes a bug in the original C: `base_high` was `uint8_t` (a 7-byte gate,
@@ -161,16 +163,17 @@ pub const DEBUG_VECTOR: u32 = 1;
 pub const BREAKPOINT_VECTOR: u32 = 3;
 
 /// Generic handler called by the ASM stub (`push esp; call i686_ISR_handler`).
-/// Dispatches on `int_num`. Vectors 0 (#DE) and 1 (#DB) have a real handler;
-/// the rest remain no-op so as not to change the behavior of the other vectors.
+/// Dispatches on `int_num`. Vectors migrate to real handlers group by group
+/// (per-vector policy lives in `exceptions.rs`); unwired ones still fall
+/// through to a "not implemented yet" message.
 #[no_mangle]
 // Cannot be an `unsafe fn`: it is called via a direct `call` from the NASM stub.
 // The lint is suppressed locally; safety is justified in the block below.
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn i686_ISR_handler(frame: *mut InterruptFrame) {
-    // SAFETY: the ASM stub always passes `esp` (valid frame pointer).
-    // Defensive null check: under QEMU/host-test a null pointer
-    // must never bring down the kernel inside the handler.
+    // SAFETY: the ASM trampoline always passes the saved frame pointer
+    // (`esp` at exception entry). Defensive null check: under QEMU/host-test
+    // a null pointer must never bring down the kernel inside the handler.
     unsafe {
         if frame.is_null() {
             return;

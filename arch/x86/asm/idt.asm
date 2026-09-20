@@ -66,10 +66,20 @@ i686_ISR_common:
     mov fs, ax
     mov gs, ax
 
-    push esp
+    ; Give the Rust handler a stack that honors the SysV i386 16-byte
+    ; alignment: the interrupt frame does not preserve it, and LLVM-emitted
+    ; SSE (movaps on esp-relative locals) would fault with #GP otherwise.
+    ; `edi` (callee-saved, and restored by popa anyway) holds the frame
+    ; pointer across the detour; the aligned scratch sits below the frame
+    ; image, which is free kernel-stack space.
+    mov edi, esp
+    and esp, 0xFFFFFFF0
+    sub esp, 12
+    push edi
     call i686_ISR_handler
     add esp, 4
 
+    mov esp, edi
     popa
     add esp, 8
     iret

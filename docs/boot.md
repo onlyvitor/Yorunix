@@ -58,12 +58,20 @@ Two decisions here:
 1. **Load at 1 MiB.** Convention dating back to the IBM PC: addresses below 1 MiB are littered with legacy BIOS structures (IVT, VGA buffers, BIOS data area). Above 1 MiB is clean territory.
 2. **`KEEP(*(.multiboot))` in a dedicated output section.** The Makefile links with `--gc-sections` (`Makefile:27`) — garbage collection for unused input sections. Without a dedicated output section + `KEEP`, the linker is free to drop the header (it's pure data, nothing references it) or shuffle it after the Rust `.text` — both break booting: the spec requires the magic within the **first 8 KiB of the image**. GRUB would report `no multiboot header found`. This is a real bug class, not a theoretical one — the C-era linker script hit it.
 
-### What `_start` does (`arch/x86/boot/entry.asm:24-33`)
+### What `_start` does (`arch/x86/boot/entry.asm:24-48`)
 
 ```asm
 _start:
     cli                        ; interrupts off — no IDT exists yet
     mov esp, stack_top         ; 16 KB stack from .bss (align 16)
+    mov eax, cr0               ; x87/SSE init: SeaBIOS/GRUB boot with
+    and eax, 0xFFFFFFFB        ; CR0.EM=1 and CR4.OSFXSR=0, so ANY SSE
+    or eax, 0x2                ; instruction LLVM emits would #UD. Enable
+    mov cr0, eax               ; MP, clear EM, set OSFXSR|OSXMMEXCPT
+    mov eax, cr4               ; (SIMD FP exceptions -> #XM, vector 19),
+    or eax, 0x600              ; then reset the x87 state.
+    mov cr4, eax
+    fninit
     call i686_GDT_Initialize   ; Rust: build table, NASM: lgdt + reload segments
     call idt_init              ; Rust: build table, lidt
     call kernel_main           ; Rust: never returns
@@ -74,6 +82,7 @@ _start:
 
 - **`cli` first.** Until an IDT exists, any interrupt (timer tick, NMI aside) would vector into garbage and triple-fault the CPU. Interrupts stay off for the entire boot sequence in the current stage.
 - **16 KB stack, 16-byte aligned** (`arch/x86/boot/entry.asm:11-16`). The x86 ABI assumes stack alignment for SSE instructions (`movaps` faults on a misaligned access), and 16 KB is comfortable room for a kernel that will grow.
+- **x87/SSE state before any Rust code.** The compiler may emit SSE anywhere (e.g. a `movaps` zero-init of a local array); SeaBIOS/GRUB hand over with `CR0.EM=1` and `CR4.OSFXSR=0`, where every SSE instruction raises `#UD`. Clearing EM, setting MP + `OSFXSR`/`OSXMMEXCPT` and `fninit` makes the CPU match what the compiled code assumes. `OSXMMEXCPT` also routes SIMD FP exceptions to `#XM` (vector 19), which has a real handler instead of the `#UD` alias.
 - **`hlt` loop as fallback.** `kernel_main` is typed `-> !` (never returns) in Rust, so the `.hang` label is defense in depth: if control ever did return, the CPU parks instead of executing whatever follows.
 
 ### Two ways to boot it

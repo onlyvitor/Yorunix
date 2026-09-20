@@ -66,20 +66,26 @@ lower addresses
 
 The struct is `#[repr(C)]` and is **the contract between two languages**: if NASM's push order or the CPU's push order changes, this struct must change with it — otherwise the handler reads registers as other registers. (See the module docstring `src/arch/x86/cpu/idt.rs:1-9`.)
 
-### The common handler trampoline (`arch/x86/asm/idt.asm:59-75`)
+### The common handler trampoline (`arch/x86/asm/idt.asm:59-89`)
 
 ```asm
 i686_ISR_common:
     pusha                      ; save all general registers
     mov ax, 0x10               ; reload data segments to kernel data
     mov ds/es/fs/gs, ax
-    push esp                   ; argument: pointer to the frame (cdecl)
-    call i686_ISR_handler      ; → Rust (src/arch/x86/cpu/idt.rs:165)
+    mov edi, esp               ; frame pointer survives the detour
+    and esp, 0xFFFFFFF0        ; restore SysV 16-byte stack alignment —
+    sub esp, 12                ; LLVM-emitted SSE (movaps) assumes it
+    push edi                   ; argument: pointer to the frame (cdecl)
+    call i686_ISR_handler      ; → Rust (src/arch/x86/cpu/idt.rs)
     add esp, 4                 ; drop the argument
+    mov esp, edi               ; back to the interrupt frame
     popa                       ; restore registers
     add esp, 8                 ; drop int_num + error_code
     iret                       ; restore eip/cs/eflags (and error code) atomically
 ```
+
+The realignment exists because exception entry (12 bytes) + stub pushes + `pusha` leave `esp` misaligned relative to the SysV i386 ABI; the aligned scratch sits below the frame image, which is free kernel-stack space. (`entry.asm` also initializes CR0/CR4 so SSE does not raise #UD in the first place.)
 
 `iret` pops `eip`, `cs`, `eflags` — and the error code is consumed by it, which is why the cleanup `add esp, 8` only removes the two stub-pushed dwords.
 

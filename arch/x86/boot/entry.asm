@@ -25,6 +25,19 @@ _start:
 
     cli
     mov esp, stack_top        ; Set up stack pointer
+
+    ; Initialize the x87/SSE state the compiler assumes: SeaBIOS/GRUB boot
+    ; with CR0.EM=1 and CR4.OSFXSR=0, so any SSE instruction LLVM emits (e.g.
+    ; a movaps zero-init of a local array) would raise #UD inside the kernel.
+    mov eax, cr0
+    and eax, 0xFFFFFFFB       ; CR0.EM (bit 2) = 0 — no math-emulator traps
+    or eax, 0x00000002        ; CR0.MP (bit 1) = 1 — monitor coprocessor
+    mov cr0, eax
+    mov eax, cr4
+    or eax, 0x00000600        ; CR4.OSFXSR (9) | OSXMMEXCPT (10): SSE usable,
+    mov cr4, eax              ; SIMD FP exceptions route to #XM (vector 19)
+    fninit                    ; reset x87 (masks all x87 exceptions)
+
     call i686_GDT_Initialize  ; Initialize GDT
     call idt_init             ; Initialize IDT
     call kernel_main          ; Call kernel main function
