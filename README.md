@@ -212,7 +212,7 @@ Safe wrapper over the memory-mapped text buffer at `0xB8000` (80x25 cells, white
 Three descriptors: NULL, kernel code (`0x08`) and kernel data (`0x10`), both ring 0, 32-bit, 4 KiB granularity (full 4 GB flat model). Entries are `#[repr(C, packed)]` with compile-time size assertions, keeping ABI compatibility with the NASM loader.
 
 ### IDT (src/arch/x86/cpu/idt.rs)
-A 256-entry Interrupt Descriptor Table with the first 32 gates (CPU exceptions) wired to NASM stubs (`i686_ISR0`..`i686_ISR31`). Stubs push an interrupt number (plus a dummy 0 when the CPU doesn't push an error code), then trampoline into the common handler, which saves all registers (`pusha`), reloads data segments and calls the Rust `i686_ISR_handler` with an `InterruptFrame`. Vectors 0 (`#DE`) and 1 (`#DB`) dispatch to handlers in `kernel/interrupts/exceptions.rs` with an `EIP/CS/EFLAGS` VGA dump; the remaining vectors are still no-op placeholders.
+A 256-entry Interrupt Descriptor Table with the first 32 gates (CPU exceptions) wired to NASM stubs (`i686_ISR0`..`i686_ISR31`). Stubs push an interrupt number (plus a dummy 0 when the CPU doesn't push an error code), then trampoline into the common handler, which saves all registers (`pusha`), reloads data segments, realigns the stack to the SysV ABI and calls the Rust `i686_ISR_handler` with an `InterruptFrame`. All 32 vectors dispatch to handlers in `kernel/interrupts/exceptions.rs`: `#DB`/`#BP` dump and return (resumable traps); every other vector dumps `EIP/CS/EFLAGS` (plus `ERR=` for the CPU error-code group: vectors 8, 10–14, 17, 30) and halts — a faulting `iret` would just re-execute the faulting instruction.
 
 ### Freestanding support (src/kernel/support.rs)
 Bare-metal linking without libc requires `memcpy`, `memmove`, `memset`, `memcmp`, `bcmp` and `rust_eh_personality`; this module provides minimal implementations with raw-pointer byte loops only — slice helpers and `ptr` intrinsics are banned here because they can lower back into the same symbols.
@@ -226,7 +226,7 @@ YoRunix follows microkernel design principles:
 
 ### Core Kernel Responsibilities (current/planned)
 - Boot and CPU tables: GDT, IDT, exception stubs *(done)*
-- Interrupt/exception handling *(vectors 0–1 dispatch live, rest pending)*
+- Interrupt/exception handling *(all 32 exception vectors dispatch; IRQs pending)*
 - Memory management (basic paging)
 - Process/thread scheduling
 - Inter-process communication (IPC)
@@ -246,8 +246,7 @@ This separation allows the kernel to remain small while delegating complex funct
 - [x] GDT (Global Descriptor Table) setup
 - [x] IDT (Interrupt Descriptor Table) + exception stubs
 - [x] VGA text-mode output driver
-- [x] Partial interrupt dispatch in Rust (vectors 0–1 live, rest no-op)
-- [ ] Full per-vector dispatch (`i686_ISR_handler` for all 32 vectors)
+- [x] Full exception dispatch in Rust (all 32 vectors, dump + halt policy)
 - [ ] IRQs: PIC remapping, timer and keyboard drivers
 - [ ] Memory management (paging)
 - [ ] Basic process management

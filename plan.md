@@ -139,6 +139,8 @@ YoRunix boot OK
 - Halt after reporting a fatal exception instead of silently returning.
 - Preserve the existing NASM-generated interrupt-frame layout.
 
+Status: exception dispatch landed ahead of serial — all 32 vectors dispatch with the dump-and-halt policy (`#DB`/`#BP` return; everything else dumps and halts), with VGA dumps through shared helpers, validated in QEMU (`-d int` vector logging plus boot-reset smoke). Serial output and panic routing remain the first Phase 1 work item, because VGA output cannot be asserted in CI.
+
 ### 5.4 Files
 
 New implementation file:
@@ -148,11 +150,11 @@ New implementation file:
 Existing implementation files:
 
 - `src/lib.rs`
-- `src/idt.rs`
+- `src/arch/x86/cpu/idt.rs`
 
 Existing low-level contract:
 
-- `arch/x86/idt.asm`
+- `arch/x86/asm/idt.asm`
 
 Build and automation:
 
