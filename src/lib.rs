@@ -10,6 +10,7 @@
 pub mod arch;
 pub mod kernel;
 
+#[cfg(not(test))]
 use core::arch::asm;
 #[cfg(not(test))]
 use core::panic::PanicInfo;
@@ -31,14 +32,9 @@ fn panic(_info: &PanicInfo) -> ! {
 /// Kernel entry point called by `arch/x86/boot/entry.asm`.
 /// `->!` documents that it never returns (the `.hang` in ASM is just a fallback).
 #[no_mangle]
-pub extern "C" fn kernel_main() -> ! {
+pub extern "C" fn kernel_main() {
     crate::kernel::drivers::vga::clear_screen();
     crate::kernel::drivers::vga::putstr(
         "Bem-vindo ao Yorunix!\ne magrao isso aqui ta funcionando!",
     );
-    loop {
-        // SAFETY: `hlt` saves power until the next interrupt; the loop
-        // guarantees we never return to the ASM caller.
-        unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) };
-    }
 }
