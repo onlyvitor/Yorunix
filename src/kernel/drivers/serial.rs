@@ -9,7 +9,6 @@ struct SerialPort {
 }
 
 fn outb(port: u16, value: u8) {
-
     unsafe {
         asm!(
             "out dx, al",
@@ -20,19 +19,16 @@ fn outb(port: u16, value: u8) {
     }
 }
 
-fn init_serial(serial:SerialPort) {
-
+fn init_serial(serial: SerialPort) {
     outb(serial.port + 1, 0x00);
     outb(serial.port + 3, 0x80);
-    outb(serial.port +0,0x03);
-    outb(serial.port +1,0x00);
-    outb(serial.port +3,0x03);
-    outb(serial.port +2,0xC7);
-    outb(serial.port +4,0x0B);
-    outb(serial.port +4,0x1E);
-    outb(serial.port+0,0xAE);
+    outb(serial.port, 0x03);
+    outb(serial.port + 1, 0x00);
+    outb(serial.port + 3, 0x03);
+    outb(serial.port + 2, 0xC7);
+    outb(serial.port + 4, 0x0B);
+    outb(serial.port + 4, 0x1E);
+    outb(serial.port, 0xAE);
 }
 
-pub fn init_com1(){
-
-}
+pub fn init_com1() {}
