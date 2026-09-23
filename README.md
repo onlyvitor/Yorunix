@@ -1,5 +1,7 @@
 # YoRunix - A Minimal Microkernel
 
+![imgdaCC](https://i.pinimg.com/originals/d5/5e/ab/d55eab376016dce6bd55b88b6e0b867b.gif)
+
 [![CI](https://github.com/onlyvitor/Yorunix/actions/workflows/ci.yml/badge.svg)](https://github.com/onlyvitor/Yorunix/actions/workflows/ci.yml)
 
 YoRunix is a lightweight, educational microkernel for 32-bit x86. The kernel core is written in **Rust** (`no_std`, `no_main`, compiled as a `staticlib`), with the low-level boot and CPU-table plumbing in **x86 32-bit assembly (NASM)**. It focuses on demonstrating fundamental operating system concepts: Multiboot booting, protected mode, descriptor tables (GDT/IDT), and bare-metal output on VGA text mode.
@@ -15,7 +17,7 @@ YoRunix is designed as a **microkernel architecture** where the core kernel rema
 
 ## Documentation
 
-In-depth design docs live in [`docs/`](docs/README.md), each explaining *how it works, why we did it, and why it matters*:
+In-depth design docs live in [`docs/`](docs/README.md), each explaining _how it works, why we did it, and why it matters_:
 
 - [Boot flow](docs/boot.md) — Multiboot, protected mode, the entry sequence
 - [Build system](docs/build-system.md) — freestanding linking of the Rust staticlib and NASM objects
@@ -65,7 +67,7 @@ To build and run YoRunix, you need:
 - **NASM** (Netwide Assembler) - for assembling the x86 32-bit stubs
 - **GNU LD** (binutils) - for linking the final kernel image (`elf_i386`)
 - **QEMU** - for emulating x86 hardware
-- **grub-mkrescue + xorriso** *(optional)* - only for building the bootable ISO
+- **grub-mkrescue + xorriso** _(optional)_ - only for building the bootable ISO
 
 ### Installation
 
@@ -137,6 +139,7 @@ make
 ```
 
 This will:
+
 1. Compile the Rust kernel core with `cargo build --target i686-unknown-linux-gnu` into a `staticlib` (`libyorunix.a`)
 2. Assemble `arch/x86/boot/entry.asm`, `arch/x86/asm/gdt.asm` and `arch/x86/asm/idt.asm` using NASM (32-bit ELF format)
 3. Link everything with `ld -m elf_i386 -T link.ld` into `build/kernel.bin`
@@ -206,18 +209,23 @@ The transition from BIOS 16-bit real mode to 32-bit protected mode is performed 
 ## Kernel Components
 
 ### VGA text mode (src/kernel/drivers/vga.rs)
+
 Safe wrapper over the memory-mapped text buffer at `0xB8000` (80x25 cells, white-on-black). Uses `write_volatile`/`read_volatile` so MMIO writes are never optimized away. `clear_screen` fills all 2000 cells with spaces; `putstr` handles `\n`, line wrap and screen-bounds truncation; `put_hex_at` writes positional `0xXXXXXXXX` values via the pure, host-tested `format_hex` helper. Driver and `support.rs` alike use only `while` byte loops — never helpers that lower to `memcpy`/`memmove`/`memset` (see `docs/vga-driver.md`).
 
 ### GDT (src/arch/x86/cpu/gdt.rs)
+
 Three descriptors: NULL, kernel code (`0x08`) and kernel data (`0x10`), both ring 0, 32-bit, 4 KiB granularity (full 4 GB flat model). Entries are `#[repr(C, packed)]` with compile-time size assertions, keeping ABI compatibility with the NASM loader.
 
 ### IDT (src/arch/x86/cpu/idt.rs)
+
 A 256-entry Interrupt Descriptor Table with the first 32 gates (CPU exceptions) wired to NASM stubs (`i686_ISR0`..`i686_ISR31`). Stubs push an interrupt number (plus a dummy 0 when the CPU doesn't push an error code), then trampoline into the common handler, which saves all registers (`pusha`), reloads data segments, realigns the stack to the SysV ABI and calls the Rust `i686_ISR_handler` with an `InterruptFrame`. All 32 vectors dispatch to handlers in `kernel/interrupts/exceptions.rs`: `#DB`/`#BP` dump and return (resumable traps); every other vector dumps `EIP/CS/EFLAGS` (plus `ERR=` for the CPU error-code group: vectors 8, 10–14, 17, 30) and halts — a faulting `iret` would just re-execute the faulting instruction.
 
 ### Freestanding support (src/kernel/support.rs)
+
 Bare-metal linking without libc requires `memcpy`, `memmove`, `memset`, `memcmp`, `bcmp` and `rust_eh_personality`; this module provides minimal implementations with raw-pointer byte loops only — slice helpers and `ptr` intrinsics are banned here because they can lower back into the same symbols.
 
 ### Panic behavior
+
 In the kernel (`panic = "abort"`, `no_std`), a panic enters a safe `hlt` loop - there is nothing to unwind into.
 
 ## Microkernel Architecture
@@ -225,13 +233,15 @@ In the kernel (`panic = "abort"`, `no_std`), a panic enters a safe `hlt` loop - 
 YoRunix follows microkernel design principles:
 
 ### Core Kernel Responsibilities (current/planned)
-- Boot and CPU tables: GDT, IDT, exception stubs *(done)*
-- Interrupt/exception handling *(all 32 exception vectors dispatch; IRQs pending)*
+
+- Boot and CPU tables: GDT, IDT, exception stubs _(done)_
+- Interrupt/exception handling _(all 32 exception vectors dispatch; IRQs pending)_
 - Memory management (basic paging)
 - Process/thread scheduling
 - Inter-process communication (IPC)
 
 ### User-Space Services (Future)
+
 - File system
 - Device drivers
 - Network stack
@@ -256,9 +266,11 @@ This separation allows the kernel to remain small while delegating complex funct
 ## References
 
 Inspired by and based on concepts from:
-- **"Operating Systems: Design and Implementation"** (Andrew S. Tanenbaum & Albert S. Woodhull) - *"Sistemas Operacionais: Projeto e Implementação"*
+
+- **"Operating Systems: Design and Implementation"** (Andrew S. Tanenbaum & Albert S. Woodhull) - _"Sistemas Operacionais: Projeto e Implementação"_
 
 Additional references:
+
 - [OSDev Wiki](https://wiki.osdev.org/)
 - [Multiboot Specification](https://www.gnu.org/software/grub/manual/multiboot/)
 - [Rustonomicon - Freestanding Rust](https://doc.rust-lang.org/nomicon/what-does-unsafe-mean.html) & [Bare Metal Rust](https://os.phil-opp.com/)
