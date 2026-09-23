@@ -35,6 +35,7 @@ fn panic(_info: &PanicInfo) -> ! {
 pub extern "C" fn kernel_main() {
     crate::kernel::drivers::vga::clear_screen();
     crate::kernel::drivers::serial::init();
+    crate::kernel::drivers::serial::write_str("Yorunix boot OK (COM1)\r\n");
     crate::kernel::drivers::vga::putstr(
         "Bem-vindo ao Yorunix!\ne magrao isso aqui ta funcionando!",
     );
