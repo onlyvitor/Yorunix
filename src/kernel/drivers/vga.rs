@@ -180,6 +180,30 @@ pub fn put_hex_at(v: u32, row: usize, col: usize) {
     }
 }
 
+/// Readback self-test: writes a pattern to the last cell (bottom-right
+/// corner) and reads it back, then restores the original content. Proves
+/// the 0xB8000 MMIO round trip end to end.
+pub fn check() -> bool {
+    // SAFETY: same owner/address as `clear_screen`/`putstr` (MMIO 0xB8000,
+    // the kernel is the sole owner). Only the scratch cell is touched and
+    // its original content is restored.
+    unsafe {
+        let buf = buffer();
+        let scratch = VGA_WIDTH * VGA_HEIGHT - 1;
+        let saved = read_volatile(buf.add(scratch));
+        write_volatile(
+            buf.add(scratch),
+            ScreenCell {
+                ascii: b'Y',
+                color: COLOR_WHITE_ON_BLACK,
+            },
+        );
+        let read = read_volatile(buf.add(scratch));
+        write_volatile(buf.add(scratch), saved);
+        read.ascii == b'Y' && read.color == COLOR_WHITE_ON_BLACK
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
