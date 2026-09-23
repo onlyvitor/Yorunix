@@ -31,23 +31,19 @@ fn inb(port: u16) -> u8 {
     value
 }
 
-fn init_serial(port: u16) {
-    outb(port + 1, 0x00);
-    outb(port + 3, 0x80);
-    outb(port, 0x03);
-    outb(port + 1, 0x00);
-    outb(port + 3, 0x03);
-    outb(port + 2, 0xC7);
-    outb(port + 4, 0x0B);
-    outb(port + 4, 0x1E);
-    outb(port, 0xAE);
+pub fn init_com1() {
+    outb(COM1 + 1, 0x00);
+    outb(COM1 + 3, 0x80);
+    outb(COM1, 0x03);
+    outb(COM1 + 1, 0x00);
+    outb(COM1 + 3, 0x03);
+    outb(COM1 + 2, 0xC7);
+    outb(COM1 + 4, 0x0B);
+    outb(COM1 + 4, 0x1E);
+    outb(COM1, 0xAE);
 
-    if inb(port) != 0xAE {
+    if inb(COM1) != 0xAE {
         return;
     }
-    outb(port + 4, 0x0f);
-}
-
-pub fn init_com1() {
-    init_serial(COM1);
+    outb(COM1 + 4, 0x0f);
 }
