@@ -2,10 +2,6 @@ use core::arch::asm;
 
 const COM1: u16 = 0x3F8;
 
-struct SerialPort {
-    port: u16,
-}
-
 fn outb(port: u16, value: u8) {
     unsafe {
         asm!(
@@ -35,24 +31,23 @@ fn inb(port: u16) -> u8 {
     value
 }
 
-fn init_serial(serial: SerialPort) {
-    outb(serial.port + 1, 0x00);
-    outb(serial.port + 3, 0x80);
-    outb(serial.port, 0x03);
-    outb(serial.port + 1, 0x00);
-    outb(serial.port + 3, 0x03);
-    outb(serial.port + 2, 0xC7);
-    outb(serial.port + 4, 0x0B);
-    outb(serial.port + 4, 0x1E);
-    outb(serial.port, 0xAE);
+fn init_serial(port: u16) {
+    outb(port + 1, 0x00);
+    outb(port + 3, 0x80);
+    outb(port, 0x03);
+    outb(port + 1, 0x00);
+    outb(port + 3, 0x03);
+    outb(port + 2, 0xC7);
+    outb(port + 4, 0x0B);
+    outb(port + 4, 0x1E);
+    outb(port, 0xAE);
 
-    if inb(serial.port) != 0xAE {
+    if inb(port) != 0xAE {
         return;
     }
-    outb(serial.port + 4, 0x0f);
+    outb(port + 4, 0x0f);
 }
 
 pub fn init_com1() {
-    let com1_serial = SerialPort { port: COM1 };
-    init_serial(com1_serial);
+    init_serial(COM1);
 }
