@@ -48,15 +48,16 @@ pub fn init() {
     outb(COM1 + 4, 0x0f);
 }
 
-/// Computes the length of a NUL-terminated byte slice.
-///
-/// Panics if the slice contains no NUL byte.
-#[expect(dead_code)]
-fn byte_len(data: &[u8]) -> usize {
-    let mut i = 0;
+/// Writes a single byte to COM1, busy-waiting until the transmitter
+/// holding register is empty (Line Status Register, port + 5, bit 5).
+pub fn write_byte(byte: u8) {
+    while inb(COM1 + 5) & 0x20 == 0 {}
+    outb(COM1, byte);
+}
 
-    while data[i] != 0 {
-        i += 1;
+/// Writes a string to COM1.
+pub fn write_str(text: &str) {
+    for &byte in text.as_bytes() {
+        write_byte(byte);
     }
-    i
 }
