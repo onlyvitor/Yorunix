@@ -239,6 +239,27 @@ pub extern "C" fn idt_init() {
     }
 }
 
+/// Verifies the loaded IDTR against the static table: `sidt` reads back
+/// what `lidt` stored. Expects the full 256-gate layout that `idt_init`
+/// loaded. Runs after init (entry.asm boot order).
+pub fn check() -> bool {
+    let mut desc = IdtDescriptor { limit: 0, base: 0 };
+    unsafe {
+        // SAFETY: mirrors `gdt::check` — `sidt` writes 6 bytes (limit +
+        // base) into the packed struct; never executed on the 64-bit host.
+        core::arch::asm!(
+            "sidt [{}]",
+            in(reg) core::ptr::addr_of_mut!(desc),
+            options(preserves_flags)
+        );
+    }
+    // Packed fields cannot be borrowed (E0793): copy to locals first.
+    let (limit, base) = (desc.limit, desc.base);
+    let expected_limit = (size_of::<[IdtEntry; 256]>() - 1) as u16;
+    let expected_base = core::ptr::addr_of!(IDT) as u32;
+    limit == expected_limit && base == expected_base
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -110,6 +110,29 @@ pub extern "C" fn i686_GDT_Initialize() {
     }
 }
 
+/// Verifies the loaded GDTR against the static table: `sgdt` reads back
+/// what `lgdt` stored and we compare limit and base with what
+/// `i686_GDT_Initialize` put there. Runs after init (entry.asm boot order).
+pub fn check() -> bool {
+    let mut desc = GdtDescriptor { limit: 0, base: 0 };
+    unsafe {
+        // SAFETY: `sgdt` writes 6 bytes (limit + base) into the packed
+        // struct and preserves flags. Kernel-only: on the 64-bit test host
+        // the instruction would write 10 bytes, but `check` is never called
+        // there (it compiles, it does not run).
+        core::arch::asm!(
+            "sgdt [{}]",
+            in(reg) core::ptr::addr_of_mut!(desc),
+            options(preserves_flags)
+        );
+    }
+    // Packed fields cannot be borrowed (E0793): copy to locals first.
+    let (limit, base) = (desc.limit, desc.base);
+    let expected_limit = (size_of::<[GdtEntry; 3]>() - 1) as u16;
+    let expected_base = core::ptr::addr_of!(GDT) as u32;
+    limit == expected_limit && base == expected_base
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
