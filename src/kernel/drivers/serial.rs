@@ -47,3 +47,16 @@ pub fn init() {
     }
     outb(COM1 + 4, 0x0f);
 }
+
+/// Computes the length of a NUL-terminated byte slice.
+///
+/// Panics if the slice contains no NUL byte.
+#[expect(dead_code)]
+fn byte_len(data: &[u8]) -> usize {
+    let mut i = 0;
+
+    while data[i] != 0 {
+        i += 1;
+    }
+    i
+}
