@@ -60,8 +60,8 @@ pub fn init() {
 
     // A healthy port echoes 0xAE; a dead one answers anything else.
     if inb(COM1) != 0xAE {
-        // Give up silently for now; the caller is not told yet.
-        return;
+        // Serial is unusable: report on VGA and stop the machine.
+        serial_error();
     }
     // MCR: leave loopback, keep modem lines and OUT2 raised.
     outb(COM1 + 4, 0x0f);
@@ -78,5 +78,15 @@ pub fn write_byte(byte: u8) {
 pub fn write_str(text: &str) {
     for &byte in text.as_bytes() {
         write_byte(byte);
+    }
+}
+
+/// Reports a fatal serial init failure and stops the CPU forever.
+fn serial_error() {
+    crate::kernel::drivers::vga::clear_screen();
+    crate::kernel::drivers::vga::putstr("ERROR: Serial initialize fail!");
+    // hlt wakes on NMI; the loop halts again, like the panic handler.
+    loop {
+        unsafe { asm!("cli; hlt", options(nomem, nostack, preserves_flags)) };
     }
 }
