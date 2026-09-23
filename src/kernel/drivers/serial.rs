@@ -31,7 +31,7 @@ fn inb(port: u16) -> u8 {
     value
 }
 
-pub fn init_com1() {
+pub fn init() {
     outb(COM1 + 1, 0x00);
     outb(COM1 + 3, 0x80);
     outb(COM1, 0x03);
