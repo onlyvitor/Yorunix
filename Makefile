@@ -67,7 +67,7 @@ clean:
 	$(CARGO) clean
 
 run: $(BUILD_DIR)/kernel.bin
-	qemu-system-x86_64 -kernel $<
+	qemu-system-x86_64 -kernel $< -serial stdio
 
 $(shell mkdir -p $(BUILD_DIR))
 
