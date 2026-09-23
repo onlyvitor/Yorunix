@@ -34,6 +34,7 @@ fn panic(_info: &PanicInfo) -> ! {
 #[no_mangle]
 pub extern "C" fn kernel_main() {
     crate::kernel::drivers::vga::clear_screen();
+    crate::kernel::drivers::serial::init();
     crate::kernel::drivers::vga::putstr(
         "Bem-vindo ao Yorunix!\ne magrao isso aqui ta funcionando!",
     );
