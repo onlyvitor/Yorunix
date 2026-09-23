@@ -115,7 +115,8 @@ mod tests {
     fn boot_text_lists_status_then_banner() {
         let (buf, len) = build_boot_text(&[("gdt", true), ("idt", false)], "hi\n");
         let text = core::str::from_utf8(&buf[..len]).unwrap();
-        assert_eq!(text, "[ OK ] gdt\n[FAIL] idt\nhi");
+        // The banner's own `\n` is part of the payload: `hi\n`, not `hi`.
+        assert_eq!(text, "[ OK ] gdt\n[FAIL] idt\nhi\n");
     }
 
     #[test]
